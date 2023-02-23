@@ -5,7 +5,7 @@ import lombok.Setter;
 
 @Setter
 @Getter
-public class Site {
+public class SiteConfig {
     private String url;
     private String name;
 }
