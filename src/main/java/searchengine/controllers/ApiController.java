@@ -45,6 +45,12 @@ public class ApiController {
 
     @GetMapping("/stopIndexing")
     public ResponseEntity<DefaultResponse> stopIndexing() {
+        if (!indexingService.isIndexing()) {
+            ErrorResponse errorResponse = new ErrorResponse();
+            errorResponse.setResult(false);
+            errorResponse.setError("Индексация не запущена");
+        }
+
         indexingService.stopIndexing();
 
         DefaultResponse response = new DefaultResponse();
