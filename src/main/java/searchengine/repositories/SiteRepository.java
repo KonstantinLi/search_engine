@@ -13,7 +13,7 @@ public interface SiteRepository extends JpaRepository<Site, Integer> {
 
     List<Site> findAllByUrlIsIn(Collection<String> urls);
 
-    Site findByUrl(String url);
-
     List<Site> findAllByStatus(Status status);
+
+    Site findByName(String name);
 }

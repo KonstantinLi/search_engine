@@ -1,5 +1,6 @@
 package searchengine.model;
 
+import jakarta.persistence.Index;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;

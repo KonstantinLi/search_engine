@@ -29,9 +29,12 @@ public class Site {
     @Column(columnDefinition = "VARCHAR(255)", nullable = false)
     private String url;
 
-    @Column(columnDefinition = "VARCHAR(255)", nullable = false)
+    @Column(columnDefinition = "VARCHAR(255)", nullable = false, unique = true)
     private String name;
 
-    @OneToMany(mappedBy = "site", fetch = FetchType.LAZY, cascade = {CascadeType.REMOVE, CascadeType.REFRESH})
+    @OneToMany(mappedBy = "site", fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
     private List<Page> pages;
+
+    @OneToMany(mappedBy = "site", fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
+    private List<Lemma> lemmas;
 }
