@@ -13,7 +13,7 @@ import java.util.List;
 
 @Repository
 public interface LemmaRepository extends JpaRepository<Lemma, Integer> {
-    long countBySite(Site site);
+    int countBySite(Site site);
 
     List<Lemma> findAllByLemmaIn(Collection<String> values);
 
