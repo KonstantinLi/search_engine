@@ -99,16 +99,19 @@ public class IndexingServiceImpl implements IndexingService {
     public void indexPage(PageData pageData) {
         isIndexing.set(true);
 
+        String mainUrl = pageData.getMainUrl();
+        String path = pageData.getPath();
+
         ForkJoinPool pool = applicationContext.getBean(ForkJoinPool.class);
-        Site site = getSiteByUrlInConfig(pageData.getMainUrl());
-        RecursiveWebParser recursiveWebParser = createRecursiveWebParser(site);
+        Site site = getSiteByUrlInConfig(mainUrl);
+        RecursiveWebParser recursiveWebParser = createRecursiveWebParser(site, path);
 
         pool.execute(() -> {
             try {
-                Page page = pageRepository.findBySiteAndPath(site, pageData.getPath());
+                Page page = pageRepository.findBySiteAndPath(site, path);
                 if (page == null) {
                     recursiveWebParser.parsePage();
-                    page = recursiveWebParser.getPage();
+                    page = pageRepository.save(recursiveWebParser.getPage());
                 } else {
                     indexRepository.deleteAllByPage(page);
                     recursiveWebParser.decrementLemmaFrequencyOrDelete(page);
@@ -116,9 +119,9 @@ public class IndexingServiceImpl implements IndexingService {
                 recursiveWebParser.collectAndSaveLemmas(page);
                 setSiteStatus(site, Status.INDEXED);
             } catch (IOException ex) {
-                failedSiteIfIndexing(site, "Страница" +
-                        pageData.getMainUrl() + pageData.getPath() +
-                        "недоступна");
+                failedSiteIfIndexing(site, "Страница <" + mainUrl + path + "> недоступна");
+            } finally {
+                pool.shutdownNow();
             }
         });
 
@@ -128,7 +131,7 @@ public class IndexingServiceImpl implements IndexingService {
 
     private void awaitSiteIndexing(Site site) {
         ForkJoinPool pool = indexingSites.get(site);
-        buildSiteAsync(site, pool);
+        buildSiteAsync(site, "/", pool);
         awaitPoolTermination(site, pool);
     }
 
@@ -148,30 +151,30 @@ public class IndexingServiceImpl implements IndexingService {
         }
     }
 
-    private void buildSiteAsync(Site site, ForkJoinPool pool) {
-        pool.execute(createRecursiveWebParser(site, pool));
+    private void buildSiteAsync(Site site, String path, ForkJoinPool pool) {
+        pool.execute(createRecursiveWebParser(site, path, pool));
     }
 
-    private RecursiveWebParser createRecursiveWebParser(Site site, ForkJoinPool pool) {
-        RecursiveWebParser parser = createRecursiveWebParser(site);
+    private RecursiveWebParser createRecursiveWebParser(Site site, String path, ForkJoinPool pool) {
+        RecursiveWebParser parser = createRecursiveWebParser(site, path);
         parser.setPool(pool);
         return parser;
     }
 
-    private RecursiveWebParser createRecursiveWebParser(Site site) {
+    private RecursiveWebParser createRecursiveWebParser(Site site, String path) {
         RecursiveWebParser parser = applicationContext.getBean(RecursiveWebParser.class);
 
         parser.setSite(site);
         parser.setJedis(new Jedis());
         parser.setPageQueue(pageQueue);
-        parser.setPageRecursive(createMainRecursivePage(site));
+        parser.setPageRecursive(createMainRecursivePage(site, path));
         parser.setForbiddenTypesList(propertiesList.getForbiddenUrlTypes());
 
         return parser;
     }
 
-    private PageRecursive createMainRecursivePage(Site site) {
-        return new PageRecursive(site.getName(), site.getUrl() + "/");
+    private PageRecursive createMainRecursivePage(Site site, String path) {
+        return new PageRecursive(site.getName(), site.getUrl() + path);
     }
 
     private Site getSiteByUrlInConfig(String url) {
