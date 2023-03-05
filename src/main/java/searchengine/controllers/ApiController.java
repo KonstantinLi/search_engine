@@ -1,5 +1,6 @@
 package searchengine.controllers;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -58,7 +59,7 @@ public class ApiController {
     }
 
     @PostMapping(value = "/indexPage", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<DefaultResponse> indexPage(@RequestBody PageData page) {
+    public ResponseEntity<DefaultResponse> indexPage(@Valid @RequestBody PageData page) {
         if (!indexingService.siteIsAvailableInConfig(page.getMainUrl())) {
             return new ResponseEntity<>(
                     ErrorResponse.build("Данная страница находится за пределами сайтов, " +
