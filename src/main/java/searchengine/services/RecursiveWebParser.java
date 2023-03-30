@@ -110,9 +110,7 @@ class RecursiveWebParser extends RecursiveAction {
             String lemmaValue = entry.getKey();
             Integer rank = entry.getValue();
 
-            Lemma lemma = lemmas.stream()
-                    .filter(lemma1 -> lemma1.getLemma().equals(lemmaValue))
-                    .findAny().orElse(null);
+            Lemma lemma = findExistingLemma(lemmas, lemmaValue);
 
             if (lemma == null) {
                 lemma = new Lemma();
@@ -132,6 +130,18 @@ class RecursiveWebParser extends RecursiveAction {
         }
 
         indexRepository.saveAllAndFlush(indexQueue);
+    }
+
+    private Lemma findExistingLemma(Collection<Lemma> lemmas, String lemmaValue) {
+        return lemmas.stream()
+                .filter(lemma1 -> {
+                    String mainUrl = site.getUrl();
+                    String lemmaSiteUrl = lemma1.getSite().getUrl();
+
+                    return lemma1.getLemma().equals(lemmaValue)
+                            && lemmaSiteUrl.equals(mainUrl);
+                })
+                .findAny().orElse(null);
     }
 
     private Collection<String> validLinks(Document doc) {
