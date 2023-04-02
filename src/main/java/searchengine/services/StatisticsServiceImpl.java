@@ -2,8 +2,6 @@ package searchengine.services;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import searchengine.config.IndexingPropertiesList;
-import searchengine.config.SiteConfig;
 import searchengine.dto.statistics.DetailedStatisticsItem;
 import searchengine.dto.statistics.StatisticsData;
 import searchengine.dto.statistics.StatisticsResponse;
@@ -22,7 +20,6 @@ import static searchengine.model.Status.FAILED;
 @Service
 @RequiredArgsConstructor
 public class StatisticsServiceImpl implements StatisticsService {
-    private final IndexingPropertiesList propertiesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
@@ -32,18 +29,13 @@ public class StatisticsServiceImpl implements StatisticsService {
         TotalStatistics total = new TotalStatistics();
 
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
-        List<SiteConfig> sitesList = propertiesList.getSites();
 
-        for (SiteConfig siteConfig : sitesList) {
-            Site site = siteRepository.findByName(siteConfig.getName());
+        for (Site site : siteRepository.findAll()) {
+            DetailedStatisticsItem item = getDetailedStatisticsItem(site);
+            detailed.add(item);
 
-            if (site != null) {
-                DetailedStatisticsItem item = getDetailedStatisticsItem(site);
-                detailed.add(item);
-
-                total.setPages(total.getPages() + item.getPages());
-                total.setLemmas(total.getLemmas() + item.getLemmas());
-            }
+            total.setPages(total.getPages() + item.getPages());
+            total.setLemmas(total.getLemmas() + item.getLemmas());
         }
 
         total.setSites(detailed.size());
