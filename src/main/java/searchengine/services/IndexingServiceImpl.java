@@ -99,8 +99,10 @@ public class IndexingServiceImpl implements IndexingService {
     public void indexPage(PageData pageData) {
         isIndexing.set(true);
 
-        String mainUrl = pageData.getMainUrl();
-        String path = pageData.getPath();
+        PageRecursive pageRecursive = new PageRecursive(pageData.getUrl());
+
+        String mainUrl = pageRecursive.getMainUrl();
+        String path = pageRecursive.getPath();
 
         ForkJoinPool pool = applicationContext.getBean(ForkJoinPool.class);
         Site site = getSiteByUrlInConfig(mainUrl);
@@ -117,7 +119,6 @@ public class IndexingServiceImpl implements IndexingService {
                     recursiveWebParser.decrementLemmaFrequencyOrDelete(page);
                 }
                 recursiveWebParser.collectAndSaveLemmas(page);
-                setSiteStatus(site, Status.INDEXED);
             } catch (IOException ex) {
                 failedSiteIfIndexing(site, "Страница <" + mainUrl + path + "> недоступна");
             } finally {

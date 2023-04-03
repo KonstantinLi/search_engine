@@ -12,10 +12,15 @@ import java.util.List;
 @Setter
 @RequiredArgsConstructor
 public class PageRecursive {
-    private final String name;
+    private String name;
     private final String url;
     private HttpStatus code;
     private String content;
+
+    public PageRecursive(String name, String url) {
+        this.name = name;
+        this.url = url;
+    }
 
     public String getDomain() {
         return url.substring(url.indexOf("://") + 3, url.lastIndexOf(getPath()));
@@ -27,7 +32,7 @@ public class PageRecursive {
     }
 
     public String getMainUrl() {
-        return getProtocol() + getDomain() + "/";
+        return getProtocol() + getDomain();
     }
 
     private String getProtocol() {

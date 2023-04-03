@@ -145,7 +145,7 @@ class RecursiveWebParser extends RecursiveAction {
     }
 
     private Collection<String> validLinks(Document doc) {
-        String mainUrl = pageRecursive.getMainUrl();
+        String mainUrl = pageRecursive.getMainUrl() + "/";
         String url = pageRecursive.getUrl();
         String name = pageRecursive.getName();
 
@@ -232,7 +232,7 @@ class RecursiveWebParser extends RecursiveAction {
     }
 
     private void shutDownPoolIfExecuted() {
-        String mainUrl = pageRecursive.getMainUrl();
+        String mainUrl = pageRecursive.getMainUrl() + "/";
         String url = pageRecursive.getUrl();
 
         if (mainUrl.equals(url)) {
