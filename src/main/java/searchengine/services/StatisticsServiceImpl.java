@@ -13,6 +13,8 @@ import searchengine.repositories.SiteRepository;
 
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 import static searchengine.model.Status.FAILED;
@@ -37,6 +39,8 @@ public class StatisticsServiceImpl implements StatisticsService {
             total.setPages(total.getPages() + item.getPages());
             total.setLemmas(total.getLemmas() + item.getLemmas());
         }
+
+        detailed.sort(Comparator.comparingInt(DetailedStatisticsItem::getPages).reversed());
 
         total.setSites(detailed.size());
         total.setIndexing(sitesNotFailed());
