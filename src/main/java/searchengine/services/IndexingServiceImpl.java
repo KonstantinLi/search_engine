@@ -11,10 +11,7 @@ import searchengine.config.SiteConfig;
 import searchengine.dto.PageData;
 import searchengine.dto.recursive.PageRecursive;
 import searchengine.exceptions.SiteConfigAbsentException;
-import searchengine.model.Lemma;
-import searchengine.model.Page;
-import searchengine.model.Site;
-import searchengine.model.Status;
+import searchengine.model.*;
 import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
@@ -250,19 +247,11 @@ public class IndexingServiceImpl implements IndexingService {
             List<Lemma> lemmasToDelete = lemmaRepository.findAllBySite(site, PageRequest.of(0, 500));
             List<Page> pagesToDelete = pageRepository.findAllBySite(site, PageRequest.of(0, 500));
 
-            lemmasToDelete.forEach(this::deleteIndexesByLemma);
-            pagesToDelete.forEach(this::deleteIndexesByPage);
+            indexRepository.deleteAllByLemmaIn(lemmasToDelete);
+            indexRepository.deleteAllByPageIn(pagesToDelete);
 
             lemmaRepository.deleteAll(lemmasToDelete);
             pageRepository.deleteAll(pagesToDelete);
         }
-    }
-
-    private void deleteIndexesByLemma(Lemma lemma) {
-        indexRepository.deleteAllByLemma(lemma);
-    }
-
-    private void deleteIndexesByPage(Page page) {
-        indexRepository.deleteAllByPage(page);
     }
 }
