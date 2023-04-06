@@ -10,4 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class JsoupConnectionConfig {
     private String userAgent;
     private String referrer;
+    private int timeout;
+    private boolean ignoreHttpErrors;
+    private boolean followRedirects;
 }

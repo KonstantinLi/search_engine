@@ -200,6 +200,9 @@ class RecursiveWebParser extends RecursiveAction {
         return Jsoup.connect(url)
                 .userAgent(jsoupConnectionConfig.getUserAgent())
                 .referrer(jsoupConnectionConfig.getReferrer())
+                .timeout(jsoupConnectionConfig.getTimeout())
+                .ignoreHttpErrors(jsoupConnectionConfig.isIgnoreHttpErrors())
+                .followRedirects(jsoupConnectionConfig.isFollowRedirects())
                 .execute();
     }
 
