@@ -11,7 +11,10 @@ import searchengine.config.SiteConfig;
 import searchengine.dto.PageData;
 import searchengine.dto.recursive.PageRecursive;
 import searchengine.exceptions.SiteConfigAbsentException;
-import searchengine.model.*;
+import searchengine.model.Lemma;
+import searchengine.model.Page;
+import searchengine.model.Site;
+import searchengine.model.Status;
 import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
@@ -142,6 +145,7 @@ public class IndexingServiceImpl implements IndexingService {
                 pool.awaitTermination(1, TimeUnit.MINUTES);
                 failedSiteIfIndexing(site, "TIMEOUT");
             } else if (site.getStatus() == Status.INDEXING) {
+                site.setLastError(null);
                 setSiteStatus(site, Status.INDEXED);
             }
         } catch (InterruptedException ex) {

@@ -3,7 +3,6 @@ package searchengine.services;
 import lombok.RequiredArgsConstructor;
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.jsoup.Jsoup;
-import org.jsoup.safety.Safelist;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -17,7 +16,7 @@ public class LemmaFinder {
     private final LuceneMorphology luceneMorphology;
 
     public String clearHTML(String html) {
-        return Jsoup.clean(html, Safelist.none());
+        return Jsoup.parse(html).text();
     }
 
     public Map<String, Integer> collectLemmas(String text) {
@@ -28,12 +27,11 @@ public class LemmaFinder {
             if (word.isBlank() || isParticle(word))
                 continue;
 
-            List<String> normalForms = luceneMorphology.getNormalForms(word);
-            if (normalForms.isEmpty()) {
-                continue;
-            }
+            String firstNormalForm = getFirstNormalForm(word);
 
-            String firstNormalForm = normalForms.get(0);
+            if (firstNormalForm.isBlank())
+                continue;
+
             Integer repeat = lemmas.getOrDefault(firstNormalForm, 0);
 
             lemmas.put(firstNormalForm, repeat + 1);
@@ -42,7 +40,19 @@ public class LemmaFinder {
         return lemmas;
     }
 
-    private String[] russianWords(String text) {
+    public String getFirstNormalForm(String word) {
+        if (word.isBlank())
+            return word;
+
+        List<String> normalForms = luceneMorphology.getNormalForms(word);
+        if (normalForms.isEmpty()) {
+            return "";
+        }
+
+        return normalForms.get(0);
+    }
+
+    public String[] russianWords(String text) {
         return text.toLowerCase()
                 .replaceAll("([^а-я\\s])", " ")
                 .trim()

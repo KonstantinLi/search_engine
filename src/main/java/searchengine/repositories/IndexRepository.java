@@ -16,18 +16,8 @@ import java.util.List;
 public interface IndexRepository extends JpaRepository<Index, Integer> {
     @Query("FROM Index i " +
             "JOIN Lemma l ON i.lemma = l " +
-            "WHERE l.lemma = ?1")
-    List<Index> findAllByLemma(String lemma);
-
-    @Query("FROM Index i " +
-            "JOIN Lemma l ON i.lemma = l " +
             "WHERE i.page = ?1 AND l.lemma = ?2")
     List<Index> findAllByPageAndLemma(Page page, String lemma);
-
-    @Query("SELECT CASE WHEN COUNT(i) > 0 THEN true ELSE false END " +
-            "FROM Index i JOIN Lemma l ON i.lemma = l " +
-            "WHERE i.page = ?1 AND l.lemma = ?2")
-    boolean existsByPageAndLemma(Page page, String lemma);
 
     @Transactional
     @Modifying

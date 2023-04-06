@@ -16,4 +16,6 @@ public interface SiteRepository extends JpaRepository<Site, Integer> {
     List<Site> findAllByStatus(Status status);
 
     Site findByName(String name);
+
+    boolean existsByUrl(String url);
 }

@@ -18,7 +18,7 @@ public class Page {
     @ManyToOne(optional = false)
     private Site site;
 
-    @Column(columnDefinition = "VARCHAR(500)", nullable = false)
+    @Column(columnDefinition = "VARCHAR(1000)", nullable = false)
     private String path;
 
     @Convert(converter = HttpCodeAttributeConverter.class)
