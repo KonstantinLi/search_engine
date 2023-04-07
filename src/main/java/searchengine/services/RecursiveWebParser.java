@@ -106,7 +106,10 @@ class RecursiveWebParser extends RecursiveAction {
         List<Lemma> lemmas = lemmaRepository.findAllByLemmaIn(lemmaData.keySet());
         Queue<Index> indexQueue = new LinkedList<>();
 
-        for (Map.Entry<String, Integer> entry : lemmaData.entrySet()) {
+        Iterator<Map.Entry<String, Integer>> iterator = lemmaData.entrySet().iterator();
+
+        while (iterator.hasNext() && !Thread.currentThread().isInterrupted()) {
+            Map.Entry<String, Integer> entry = iterator.next();
             String lemmaValue = entry.getKey();
             Integer rank = entry.getValue();
 

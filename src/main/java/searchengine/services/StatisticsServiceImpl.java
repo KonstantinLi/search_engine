@@ -13,7 +13,6 @@ import searchengine.repositories.SiteRepository;
 
 import java.sql.Timestamp;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 

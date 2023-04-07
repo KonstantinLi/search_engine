@@ -114,7 +114,7 @@ public class ApiController {
                     HttpStatus.BAD_REQUEST);
 
         if (mainUrl != null) {
-            if (!mainUrl.matches("^http(s)?://[A-Za-z0-9.]+"))
+            if (!mainUrl.matches("^http(s)?://[-A-Za-z0-9.]+"))
                 return new ResponseEntity<>(
                         ErrorResponse.build("URL адреса сайта должен соответствовать формату http(-s)://www.site.com"),
                         HttpStatus.BAD_REQUEST);
