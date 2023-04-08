@@ -11,7 +11,7 @@ import java.util.List;
 @Table(name = "site")
 @Getter
 @Setter
-public class Site {
+public class Site implements Comparable<Site> {
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE)
     private Integer id;
@@ -37,4 +37,9 @@ public class Site {
 
     @OneToMany(mappedBy = "site", fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
     private List<Lemma> lemmas;
+
+    @Override
+    public int compareTo(Site o) {
+        return name.compareTo(o.name);
+    }
 }

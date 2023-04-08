@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -292,12 +293,17 @@ public class IndexingServiceImpl implements IndexingService {
                 .map(SiteConfig::getUrl)
                 .toList();
 
-        Set<Site> sites = new HashSet<>(siteRepository.findAllByUrlIsIn(urls));
+        Set<Site> sites = new TreeSet<>(siteRepository.findAllByUrlIsIn(urls));
         sites.addAll(siteRepository.findAllByStatus(Status.INDEXING));
 
         executor.execute(() -> {
             sites.stream().peek(this::deleteSiteData).forEach(site -> jedis.del(site.getName()));
         });
+
+        siteRepository.deleteAll(
+                sites.stream()
+                        .filter(site -> !urls.contains(site.getUrl()))
+                        .collect(Collectors.toSet()));
 
         executor.shutdown();
 
