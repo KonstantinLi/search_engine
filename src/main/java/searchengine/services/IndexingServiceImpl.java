@@ -52,7 +52,7 @@ public class IndexingServiceImpl implements IndexingService {
     public void startIndexing() {
         isIndexing.set(true);
 
-        List<SiteConfig> sites = propertiesList.getSites();
+        List<SiteConfig> sites = Optional.of(propertiesList.getSites()).orElse(new ArrayList<>());
         for (SiteConfig siteConfig: sites) {
             String name = siteConfig.getName();
             String url = siteConfig.getUrl();
