@@ -1,12 +1,16 @@
 package searchengine.controllers;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.validator.constraints.URL;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.ObjectError;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import searchengine.dto.PageData;
 import searchengine.dto.SearchResponse;
@@ -14,6 +18,9 @@ import searchengine.dto.recursive.PageRecursive;
 import searchengine.dto.statistics.DefaultResponse;
 import searchengine.dto.statistics.ErrorResponse;
 import searchengine.dto.statistics.StatisticsResponse;
+import searchengine.exceptions.IndexingException;
+import searchengine.exceptions.NotIndexingException;
+import searchengine.exceptions.OutOfSitesBoundsException;
 import searchengine.model.Site;
 import searchengine.services.IndexingService;
 import searchengine.services.SearchService;
@@ -24,6 +31,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
+@Validated
 @RequiredArgsConstructor
 public class ApiController {
 
@@ -38,11 +46,8 @@ public class ApiController {
 
     @GetMapping("/startIndexing")
     public ResponseEntity<DefaultResponse> startIndexing() {
-        if (indexingService.isIndexing()) {
-            return new ResponseEntity<>(
-                    ErrorResponse.build("Индексация уже запущена"),
-                    HttpStatus.BAD_REQUEST);
-        }
+        if (indexingService.isIndexing())
+            throw new IndexingException();
 
         indexingService.startIndexing();
 
@@ -54,11 +59,8 @@ public class ApiController {
 
     @GetMapping("/stopIndexing")
     public ResponseEntity<DefaultResponse> stopIndexing() {
-        if (!indexingService.isIndexing()) {
-            return new ResponseEntity<>(
-                    ErrorResponse.build("Индексация не запущена"),
-                    HttpStatus.BAD_REQUEST);
-        }
+        if (!indexingService.isIndexing())
+            throw new NotIndexingException();
 
         indexingService.stopIndexing();
 
@@ -71,27 +73,18 @@ public class ApiController {
     @PostMapping(value = "/indexPage", consumes = {MediaType.APPLICATION_FORM_URLENCODED_VALUE})
     public ResponseEntity<DefaultResponse> indexPage(@Valid PageData pageData, BindingResult bindingResult) {
         if (bindingResult.hasErrors())
-            return new ResponseEntity<>(
-                    ErrorResponse.build(getErrorMessages(bindingResult)),
-                    HttpStatus.BAD_REQUEST);
+            throw new RuntimeException(getErrorMessages(bindingResult));
 
         String url = pageData.getUrl();
         if (!url.endsWith("/"))
             pageData.setUrl(url + "/");
 
         PageRecursive page = new PageRecursive(pageData.getUrl());
-        if (!indexingService.siteIsAvailableInConfig(page.getMainUrl())) {
-            return new ResponseEntity<>(
-                    ErrorResponse.build("Данная страница находится за пределами сайтов, " +
-                            "указанных в конфигурационном файле"),
-                    HttpStatus.BAD_REQUEST);
-        }
+        if (!indexingService.siteIsAvailableInConfig(page.getMainUrl()))
+            throw new OutOfSitesBoundsException();
 
-        if (indexingService.isIndexing()) {
-            return new ResponseEntity<>(
-                    ErrorResponse.build("Индексация уже запущена"),
-                    HttpStatus.BAD_REQUEST);
-        }
+        if (indexingService.isIndexing())
+            throw new IndexingException();
 
         indexingService.indexPage(pageData);
 
@@ -103,37 +96,13 @@ public class ApiController {
 
     @GetMapping("/search")
     public ResponseEntity<?> search(
-            @RequestParam String query,
-            @RequestParam(name = "site", required = false) String mainUrl,
-            @RequestParam(required = false, defaultValue = "0") Integer offset,
-            @RequestParam(required = false, defaultValue = "20") Integer limit) {
-
-        if (query == null || query.isBlank())
-            return new ResponseEntity<>(
-                    ErrorResponse.build("Задан пустой поисковой запрос"),
-                    HttpStatus.BAD_REQUEST);
-
-        if (mainUrl != null) {
-            if (!mainUrl.matches("^http(s)?://[-A-Za-z0-9.]+"))
-                return new ResponseEntity<>(
-                        ErrorResponse.build("URL адреса сайта должен соответствовать формату http(-s)://www.site.com"),
-                        HttpStatus.BAD_REQUEST);
-
-            if (!searchService.siteHasAnIndex(mainUrl))
-                return new ResponseEntity<>(
-                        ErrorResponse.build(String.format("Сайт <%s> ранее не индексировался", mainUrl)),
-                        HttpStatus.BAD_REQUEST);
-        }
-
-        if (offset < 0)
-            return new ResponseEntity<>(
-                    ErrorResponse.build("Значение offset должно быть больше или равно 0"),
-                    HttpStatus.BAD_REQUEST);
-
-        if (limit < 0)
-            return new ResponseEntity<>(
-                    ErrorResponse.build("Значение limit должно быть больше или равно 0"),
-                    HttpStatus.BAD_REQUEST);
+            @RequestParam @NotEmpty(message = "Задан пустой поисковой запрос") String query,
+            @RequestParam(name = "site", required = false) @URL(
+                    regexp = "^http(s)?://[-A-Za-z0-9.]+",
+                    message = "URL адреса сайта должен соответствовать формату http(-s)://www.site.com")
+            String mainUrl,
+            @RequestParam(required = false, defaultValue = "0") @PositiveOrZero(message = "Значение offset должно быть больше или равно 0") Integer offset,
+            @RequestParam(required = false, defaultValue = "20") @PositiveOrZero(message = "Значение limit должно быть больше или равно 0") Integer limit) {
 
         List<Site> sites = searchService.getAllSites()
                 .stream()
@@ -149,5 +118,11 @@ public class ApiController {
                 .stream()
                 .map(ObjectError::getDefaultMessage)
                 .collect(Collectors.joining(". "));
+    }
+
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    @ExceptionHandler(value = {RuntimeException.class})
+    public ErrorResponse handleException(RuntimeException ex) {
+        return ErrorResponse.build(ex.getMessage());
     }
 }
