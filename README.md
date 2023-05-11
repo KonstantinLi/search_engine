@@ -112,27 +112,25 @@ ___
 ### Порядок действий
 + Для начала необходимо создать пустую базу данных в PostgreSQL. Название можно придумать любое.
 
-+ Клонировать проект в свою рабочую директорию: 
++ Клонируйте проект в свою рабочую директорию: 
 
 ```git clone https://github.com/KonstantinLi/search_engine```
 
-+ Открыть проект можно в любой IDE с поддержкой сборщика Maven. 
++ Откройте проект в любой IDE с поддержкой сборщика Maven. 
 Рекомендовано **IntelliJ IDEA Ultimate Edition** для облегченной работы со Spring и инструментами БД.
   + Java: 17+
   + PostgreSQL: 15+
   
-+ Создать конфигурацию запуска проекта Spring Boot, в которой указать:
++ Создайте конфигурацию запуска проекта Spring Boot, в которой нужно указать:
   + Класс **Application**, аннотированный @SpringBootApplication
   + Имя проекта по желанию
   + Java 17+
   + Рекомендуется указать свойство **-Xmx4096M** в VM опциях, что означает выделенную для приложения память объемом 4 ГБ
 
-+ В папке **src/main/resources** создать файл **application.yaml** и указать минимальную конфигурацию:
++ Проект с коробки содержит дефолтный файл конфигурации **application.properties**, который подключает встроенную базу данных HSQLDB, но её применение
+  в production не рекомендовано. Поэтому в папке **src/main/resources/config** создайте файл **application.yaml** и укажите следующую конфигурацию:
 
 ```yaml
-server:
-  port: 8080
-
 spring:
   datasource:
     username: user
@@ -143,52 +141,19 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQL95Dialect
-        jdbc:
-          batch_size: 50
-    hibernate:
-      ddl-auto: create
-    show-sql: false
 
 indexing-settings:
   sites:
     - url: https://www.site.com
       name: site-name
-      
-  forbidden-url-types:
-    - "#"
-    - ".jpg"
-    - ".jpeg"
-    - ".png"
-    - ".gif"
-    - ".webp"
-    - ".pdf"
-    - ".eps"
-    - ".xlsx"
-    - ".doc"
-    - ".docx"
-    - ".pptx"
-    - ".mp4"
-    - ".mp3"
-    - ".flac"
-    - ".avi"
-
-jsoup:
-  userAgent: Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6
-  referrer: https://www.google.com
-  timeout: 10_000
-  ignoreHttpErrors: true
-  followRedirects: false
 ```
 
-+ Внести свои данные БД:
++ Внесите свои данные БД:
   + ***user*** - имя пользователя
   + ***pass*** - пароль
   + ***port*** - зарезервированный порт
   + ***database*** - имя БД
 
-+ В **indexing-settings.sites** внести свой список значений **url-name** индексируемых сайтов.
++ В **indexing-settings.sites** внесите свой список значений **url-name** индексируемых сайтов.
 
 + Указав свойству **spring.jpa.show-sql** значение **true** все SQL-запросы будут видны в консоли.
-
-> :bangbang: **ВАЖНО**. После первого запуска приложения значение свойства **spring.jpa.hibernate.ddl-auto** нужно изменить на **validate**.
-> В противном случае при каждом повторном запуске проекта БД будет **удаляться** и создаваться заново.
