@@ -1,6 +1,7 @@
 package searchengine.services;
 
 import jakarta.annotation.PreDestroy;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
@@ -48,7 +49,7 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public SearchResponse search(
-            @NotNull String query,
+            @NotEmpty @NotNull String query,
             @NotNull List<Site> sites,
             @PositiveOrZero int offset,
             @PositiveOrZero int limit) {
