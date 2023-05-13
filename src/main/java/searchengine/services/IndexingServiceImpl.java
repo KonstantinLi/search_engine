@@ -2,44 +2,31 @@ package searchengine.services;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationContext;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import redis.clients.jedis.Jedis;
-import searchengine.config.IndexingPropertiesList;
 import searchengine.config.SiteConfig;
 import searchengine.dto.PageData;
 import searchengine.dto.recursive.PageRecursive;
-import searchengine.exceptions.PageAbsentException;
-import searchengine.exceptions.SiteConfigAbsentException;
-import searchengine.model.Lemma;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.model.Status;
-import searchengine.repositories.IndexRepository;
-import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
-import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class IndexingServiceImpl implements IndexingService {
-
+    private final DataManager dataManager;
     private final ApplicationContext applicationContext;
-    private final IndexingPropertiesList propertiesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
-    private final LemmaRepository lemmaRepository;
-    private final IndexRepository indexRepository;
+
     private final Queue<Page> pageQueue = new ConcurrentLinkedQueue<>();
-    private final Jedis jedis = new Jedis();
     private final Map<Site, ForkJoinPool> indexingSites =
             Collections.synchronizedMap(new HashMap<>());
     private final AtomicBoolean isIndexing = new AtomicBoolean();
@@ -52,12 +39,12 @@ public class IndexingServiceImpl implements IndexingService {
     public void startIndexing() {
         isIndexing.set(true);
 
-        List<SiteConfig> sites = Optional.of(propertiesList.getSites()).orElse(new ArrayList<>());
+        List<SiteConfig> sites = dataManager.getSitesInConfig();
         for (SiteConfig siteConfig: sites) {
             String name = siteConfig.getName();
             String url = siteConfig.getUrl();
 
-            Site site = saveSite(name, url, null, Status.INDEXING);
+            Site site = dataManager.saveSite(name, url, null, Status.INDEXING);
             ForkJoinPool pool = applicationContext.getBean(ForkJoinPool.class);
 
             indexingSites.put(site, pool);
@@ -70,8 +57,8 @@ public class IndexingServiceImpl implements IndexingService {
         }
 
         try {
-            for (Site site : indexingSites.keySet())
-                awaitSiteIndexing(site);
+            for (Map.Entry<Site, ForkJoinPool> entry: indexingSites.entrySet())
+                awaitSiteIndexing(entry.getKey(), entry.getValue());
         } catch (Exception ex) {
             indexingSites.keySet().forEach(site -> failedSiteIfIndexing(site, ex.getMessage()));
         } finally {
@@ -96,6 +83,7 @@ public class IndexingServiceImpl implements IndexingService {
             } else {
                 indexingSites.forEach((site, pool) -> {
                     try {
+                        Jedis jedis = applicationContext.getBean(Jedis.class);
                         shutdownNowAndAwait(pool);
                         jedis.del(site.getName());
                     } catch (InterruptedException ex) {
@@ -117,9 +105,10 @@ public class IndexingServiceImpl implements IndexingService {
         isIndexing.set(true);
 
         PageRecursive pageRecursive = new PageRecursive(pageData.getUrl());
+        RecursiveWebParser recursiveWebParser = createRecursiveWebParser(pageRecursive);
 
         pageExecutor = applicationContext.getBean(ThreadPoolExecutor.class);
-        Future<Void> future = pageExecutor.submit(pageIndexingCallable(pageRecursive));
+        Future<Void> future = pageExecutor.submit(recursiveWebParser.pageIndexingCallable());
 
         try {
             future.get();
@@ -131,39 +120,15 @@ public class IndexingServiceImpl implements IndexingService {
         isIndexing.set(false);
     }
 
-    private Callable<Void> pageIndexingCallable(PageRecursive pageRecursive) {
-        String mainUrl = pageRecursive.getMainUrl();
-        String path = pageRecursive.getPath();
-        Site site = getSiteByUrlInConfig(mainUrl);
-        RecursiveWebParser recursiveWebParser = createRecursiveWebParser(site, path);
-
-        return () -> {
-            try {
-                Page page = pageRepository.findBySiteAndPath(site, path);
-
-                if (page == null) {
-                    recursiveWebParser.parsePage();
-                    page = pageRepository.save(recursiveWebParser.getPage());
-                } else {
-                    indexRepository.deleteAllByPage(page);
-                    recursiveWebParser.decrementLemmaFrequencyOrDelete(page);
-                }
-                recursiveWebParser.collectAndSaveLemmas(page);
-
-                return null;
-            } catch (IOException ex) {
-                throw new PageAbsentException(pageRecursive.getUrl());
-            }
-        };
+    @Override
+    public boolean siteIsAvailableInConfig(String url) {
+        List<SiteConfig> sites = dataManager.getSitesInConfig();
+        return sites.stream().anyMatch(siteConfig -> siteConfig.getUrl().equals(url));
     }
 
-    private void awaitSiteIndexing(Site site) {
-        ForkJoinPool pool = indexingSites.get(site);
-        buildSiteAsync(site, pool);
-        awaitSitePoolTermination(site, pool);
-    }
-
-    private void awaitSitePoolTermination(Site site, ExecutorService pool) {
+    private void awaitSiteIndexing(Site site, ForkJoinPool pool) {
+        PageRecursive pageRecursive = new PageRecursive(site.getName(), site.getUrl() + "/");
+        pool.execute(createRecursiveWebParser(pageRecursive, pool, site));
         try {
             boolean isNotTimeout = pool.awaitTermination(5, TimeUnit.HOURS);
 
@@ -172,7 +137,8 @@ public class IndexingServiceImpl implements IndexingService {
                 failedSiteIfIndexing(site, "TIMEOUT");
             } else if (site.getStatus() == Status.INDEXING) {
                 site.setLastError(null);
-                setSiteStatus(site, Status.INDEXED);
+                site.setStatus(Status.INDEXED);
+                siteRepository.save(site);
             }
         } catch (InterruptedException ex) {
             failedSiteIfIndexing(site, ex.getMessage());
@@ -182,7 +148,7 @@ public class IndexingServiceImpl implements IndexingService {
     private boolean awaitDataDeleting() {
         try {
             deleteExecutor = applicationContext.getBean(ThreadPoolExecutor.class);
-            if (!deleteOldData(deleteExecutor) ||
+            if (!dataManager.deleteOldData(deleteExecutor) ||
                     indexingSites.keySet().stream().allMatch(site -> site.getStatus() == Status.FAILED)) {
                 return false;
             }
@@ -203,81 +169,27 @@ public class IndexingServiceImpl implements IndexingService {
         pool.awaitTermination(1, TimeUnit.MINUTES);
     }
 
-    private void buildSiteAsync(Site site, ForkJoinPool pool) {
-        pool.execute(createRecursiveWebParser(site, "/", pool));
+    private RecursiveWebParser createRecursiveWebParser(PageRecursive pageRecursive) {
+        Site site = dataManager.getSiteByUrlInConfig(pageRecursive.getMainUrl());
+        return createRecursiveWebParser(pageRecursive, null, site);
     }
 
-    private RecursiveWebParser createRecursiveWebParser(Site site, String path, ForkJoinPool pool) {
-        RecursiveWebParser parser = createRecursiveWebParser(site, path);
-        parser.setPool(pool);
-        return parser;
-    }
-
-    private RecursiveWebParser createRecursiveWebParser(Site site, String path) {
+    private RecursiveWebParser createRecursiveWebParser(PageRecursive pageRecursive, ForkJoinPool pool, Site site) {
         RecursiveWebParser parser = applicationContext.getBean(RecursiveWebParser.class);
 
         parser.setSite(site);
-        parser.setJedis(new Jedis());
+        parser.setPool(pool);
         parser.setPageQueue(pageQueue);
-        parser.setPageRecursive(createRecursivePage(site, path));
-        parser.setForbiddenTypesList(propertiesList.getForbiddenUrlTypes());
+        parser.setPageRecursive(pageRecursive);
 
         return parser;
-    }
-
-    private PageRecursive createRecursivePage(Site site, String path) {
-        return new PageRecursive(site.getName(), site.getUrl() + path);
-    }
-
-    private Site getSiteByUrlInConfig(String url) {
-        Optional<SiteConfig> siteConfigOptional = propertiesList
-                .getSites()
-                .stream()
-                .filter(siteConfig -> siteConfig.getUrl().equals(url))
-                .findFirst();
-
-        if (siteConfigOptional.isPresent()) {
-            SiteConfig siteConfig = siteConfigOptional.get();
-            String name = siteConfig.getName();
-
-            Site site = siteRepository.findByName(name);
-            return site == null ? saveSite(name, url, null, Status.INDEXED) : site;
-        } else {
-            throw new SiteConfigAbsentException(url);
-        }
-    }
-
-    public boolean siteIsAvailableInConfig(String url) {
-        return propertiesList.getSites()
-                .stream()
-                .anyMatch(siteConfig -> siteConfig.getUrl().equals(url));
-    }
-
-    private Site saveSite(String name, String url, String error, Status status) {
-        Site site = siteRepository.findByName(name);
-
-        if (site == null) {
-            site = new Site();
-            site.setName(name);
-            site.setUrl(url);
-        }
-
-        site.setStatusTime(LocalDateTime.now());
-        site.setLastError(error);
-        setSiteStatus(site, status);
-
-        return site;
-    }
-
-    private void setSiteStatus(Site site, Status status) {
-        site.setStatus(status);
-        siteRepository.save(site);
     }
 
     private void failedSiteIfIndexing(Site site, String errorText) {
         if (site.getStatus() == Status.INDEXING) {
             site.setLastError(errorText);
-            setSiteStatus(site, Status.FAILED);
+            site.setStatus(Status.FAILED);
+            siteRepository.save(site);
         }
     }
 
@@ -285,47 +197,5 @@ public class IndexingServiceImpl implements IndexingService {
         pageRepository.saveAllAndFlush(pageQueue);
         pageQueue.clear();
         indexingSites.clear();
-    }
-
-    private boolean deleteOldData(ExecutorService executor) throws InterruptedException {
-        List<String> urls = propertiesList.getSites()
-                .stream()
-                .map(SiteConfig::getUrl)
-                .toList();
-
-        Set<Site> sites = new TreeSet<>(siteRepository.findAllByUrlIsIn(urls));
-        sites.addAll(siteRepository.findAllByStatus(Status.INDEXING));
-
-        executor.execute(() -> {
-            sites.stream().peek(this::deleteSiteData).forEach(site -> jedis.del(site.getName()));
-        });
-
-        siteRepository.deleteAll(
-                sites.stream()
-                        .filter(site -> !urls.contains(site.getUrl()))
-                        .collect(Collectors.toSet()));
-
-        executor.shutdown();
-
-        boolean isNotTimeout = executor.awaitTermination(5, TimeUnit.HOURS);
-        if (!isNotTimeout) {
-            shutdownNowAndAwait(executor);
-        }
-
-        return isNotTimeout;
-    }
-
-    private void deleteSiteData(Site site) {
-        while (!Thread.currentThread().isInterrupted() &&
-                (lemmaRepository.countBySite(site) > 0 || pageRepository.countBySite(site) > 0)) {
-            List<Lemma> lemmasToDelete = lemmaRepository.findAllBySite(site, PageRequest.of(0, 500));
-            List<Page> pagesToDelete = pageRepository.findAllBySite(site, PageRequest.of(0, 500));
-
-            indexRepository.deleteAllByLemmaIn(lemmasToDelete);
-            indexRepository.deleteAllByPageIn(pagesToDelete);
-
-            lemmaRepository.deleteAll(lemmasToDelete);
-            pageRepository.deleteAll(pagesToDelete);
-        }
     }
 }

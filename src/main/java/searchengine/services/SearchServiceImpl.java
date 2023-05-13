@@ -42,8 +42,8 @@ public class SearchServiceImpl implements SearchService {
     private final LemmaRepository lemmaRepository;
     private final PageRepository pageRepository;
     private final SiteRepository siteRepository;
-    private final Jedis jedis = new Jedis();
     private final LemmaFinder lemmaFinder;
+    private final Jedis jedis;
 
     private List<String> mostPopularLemmas;
 
@@ -381,10 +381,6 @@ public class SearchServiceImpl implements SearchService {
         } catch (Exception ignored) {}
 
         return null;
-    }
-
-    public boolean siteHasAnIndex(String mainUrl) {
-        return siteRepository.existsByUrl(mainUrl);
     }
 
     public List<Site> getAllSites() {
