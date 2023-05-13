@@ -13,7 +13,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import redis.clients.jedis.Jedis;
 import searchengine.config.JsoupConnectionConfig;
-import searchengine.dto.recursive.PageRecursive;
 import searchengine.exceptions.InvalidURLException;
 import searchengine.exceptions.PageAbsentException;
 import searchengine.exceptions.WebParserInterruptedException;
@@ -43,7 +42,7 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
 
     @Value("${spring.jpa.properties.hibernate.jdbc.batch_size}")
     private int batchSize;
-    private PageRecursive pageRecursive;
+    private PageIntrospect pageRecursive;
     private Queue<Page> pageQueue;
     private ForkJoinPool pool;
     private Site site;
@@ -154,11 +153,11 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
 
     private Collection<RecursiveWebParser> getRecursiveWebParsers(Collection<String> links) {
         return links.stream()
-                .map(link -> getChildParser(new PageRecursive(pageRecursive.getName(), link)))
+                .map(link -> getChildParser(new PageIntrospect(pageRecursive.getName(), link)))
                 .collect(Collectors.toSet());
     }
 
-    private RecursiveWebParser getChildParser(PageRecursive child) {
+    private RecursiveWebParser getChildParser(PageIntrospect child) {
         try {
             RecursiveWebParser childParser = clone();
             childParser.setPageRecursive(child);

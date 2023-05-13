@@ -14,7 +14,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import searchengine.dto.PageData;
 import searchengine.dto.SearchResponse;
-import searchengine.dto.recursive.PageRecursive;
+import searchengine.services.PageIntrospect;
 import searchengine.dto.statistics.DefaultResponse;
 import searchengine.dto.statistics.ErrorResponse;
 import searchengine.dto.statistics.StatisticsResponse;
@@ -79,7 +79,7 @@ public class ApiController {
         if (!url.endsWith("/"))
             pageData.setUrl(url + "/");
 
-        PageRecursive page = new PageRecursive(pageData.getUrl());
+        PageIntrospect page = new PageIntrospect(pageData.getUrl());
         if (!indexingService.siteIsAvailableInConfig(page.getMainUrl()))
             throw new OutOfSitesBoundsException();
 

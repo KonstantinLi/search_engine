@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 import redis.clients.jedis.Jedis;
 import searchengine.config.SiteConfig;
 import searchengine.dto.PageData;
-import searchengine.dto.recursive.PageRecursive;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.model.Status;
@@ -104,7 +103,7 @@ public class IndexingServiceImpl implements IndexingService {
     public void indexPage(PageData pageData) {
         isIndexing.set(true);
 
-        PageRecursive pageRecursive = new PageRecursive(pageData.getUrl());
+        PageIntrospect pageRecursive = new PageIntrospect(pageData.getUrl());
         RecursiveWebParser recursiveWebParser = createRecursiveWebParser(pageRecursive);
 
         pageExecutor = applicationContext.getBean(ThreadPoolExecutor.class);
@@ -127,7 +126,7 @@ public class IndexingServiceImpl implements IndexingService {
     }
 
     private void awaitSiteIndexing(Site site, ForkJoinPool pool) {
-        PageRecursive pageRecursive = new PageRecursive(site.getName(), site.getUrl() + "/");
+        PageIntrospect pageRecursive = new PageIntrospect(site.getName(), site.getUrl() + "/");
         pool.execute(createRecursiveWebParser(pageRecursive, pool, site));
         try {
             boolean isNotTimeout = pool.awaitTermination(5, TimeUnit.HOURS);
@@ -169,12 +168,12 @@ public class IndexingServiceImpl implements IndexingService {
         pool.awaitTermination(1, TimeUnit.MINUTES);
     }
 
-    private RecursiveWebParser createRecursiveWebParser(PageRecursive pageRecursive) {
+    private RecursiveWebParser createRecursiveWebParser(PageIntrospect pageRecursive) {
         Site site = dataManager.getSiteByUrlInConfig(pageRecursive.getMainUrl());
         return createRecursiveWebParser(pageRecursive, null, site);
     }
 
-    private RecursiveWebParser createRecursiveWebParser(PageRecursive pageRecursive, ForkJoinPool pool, Site site) {
+    private RecursiveWebParser createRecursiveWebParser(PageIntrospect pageRecursive, ForkJoinPool pool, Site site) {
         RecursiveWebParser parser = applicationContext.getBean(RecursiveWebParser.class);
 
         parser.setSite(site);

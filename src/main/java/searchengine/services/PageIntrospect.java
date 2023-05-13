@@ -1,4 +1,4 @@
-package searchengine.dto.recursive;
+package searchengine.services;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -8,13 +8,13 @@ import org.springframework.http.HttpStatus;
 @Getter
 @Setter
 @RequiredArgsConstructor
-public class PageRecursive {
+public class PageIntrospect {
     private String name;
     private final String url;
     private HttpStatus code;
     private String content;
 
-    public PageRecursive(String name, String url) {
+    public PageIntrospect(String name, String url) {
         this.name = name;
         this.url = url;
     }
