@@ -54,7 +54,7 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
             Document doc = parsePage();
             dataManager.updateSiteStatusTime(site);
 
-            synchronized (pageQueue) {
+            synchronized (pageQueue) { // ensure other threads wait when a thread captured the monitor provide multi-insert operation
                 Page page = getPage();
                 if (page.getPath().length() <= 1000) {
                     pageQueue.add(page);
@@ -143,7 +143,7 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
                         && !link.equals(url))
                 .filter(dataManager::checkTypeUrl)
                 .filter(link -> {
-                    synchronized (jedis) {
+                    synchronized (jedis) { // ensure links are checked and added consistently
                         return jedis.sadd(name, link) != 0;
                     }
                 })
