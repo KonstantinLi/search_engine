@@ -1,6 +1,8 @@
 package searchengine.services;
 
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -19,10 +21,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class IndexingServiceImpl implements IndexingService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(IndexingServiceImpl.class);
+
     private final DataManager dataManager;
     private final ApplicationContext applicationContext;
     private final SiteRepository siteRepository;
@@ -40,8 +45,11 @@ public class IndexingServiceImpl implements IndexingService {
     @Override
     public void startIndexing() {
         isIndexing.set(true);
-
         List<SiteConfig> sites = dataManager.getSitesInConfig();
+
+        String siteNames = sites.stream().map(SiteConfig::getName).collect(Collectors.joining(", "));
+        LOGGER.info("Start indexing: " + siteNames);
+
         for (SiteConfig siteConfig: sites) {
             String name = siteConfig.getName();
             String url = siteConfig.getUrl();
@@ -59,10 +67,15 @@ public class IndexingServiceImpl implements IndexingService {
         }
 
         try {
-            for (Map.Entry<Site, ForkJoinPool> entry: indexingSites.entrySet())
+            for (Map.Entry<Site, ForkJoinPool> entry: indexingSites.entrySet()) {
                 awaitSiteIndexing(entry.getKey(), entry.getValue());
+            }
+            if (indexingSites.keySet().stream().allMatch(site -> site.getStatus() == Status.INDEXED)) {
+                LOGGER.info("End indexing: " + siteNames);
+            }
         } catch (Exception ex) {
             indexingSites.keySet().forEach(site -> failedSiteIfIndexing(site, ex.getMessage()));
+            LOGGER.error("Indexing FAILED", ex);
         } finally {
             flushAndClearResources();
             isIndexing.set(false);
@@ -75,10 +88,13 @@ public class IndexingServiceImpl implements IndexingService {
         try {
             if (pageExecutor != null) {
                 shutdownNowAndAwait(pageExecutor);
+                pageExecutor = null;
+                LOGGER.info("Indexing page STOP");
                 return;
             }
 
             indexingSites.keySet().forEach(site -> failedSiteIfIndexing(site, "Индексация остановлена пользователем"));
+            LOGGER.info("Indexing STOP");
 
             if (deleteExecutor != null) {
                 shutdownNowAndAwait(deleteExecutor);
@@ -90,10 +106,13 @@ public class IndexingServiceImpl implements IndexingService {
                         jedis.del(site.getName());
                     } catch (InterruptedException ex) {
                         failedSiteIfIndexing(site, ex.getMessage());
+                        LOGGER.error("Exception is thrown", ex);
                     }
                 });
             }
-        } catch (InterruptedException ignored) {}
+        } catch (InterruptedException ex) {
+            LOGGER.error("Exception is thrown", ex);
+        }
     }
 
     @Override
@@ -106,7 +125,10 @@ public class IndexingServiceImpl implements IndexingService {
     public void indexPage(PageData pageData) {
         isIndexing.set(true);
 
-        PageIntrospect pageRecursive = new PageIntrospect(pageData.getUrl());
+        String url = pageData.getUrl();
+        LOGGER.info("Start indexing page: " + url);
+
+        PageIntrospect pageRecursive = new PageIntrospect(url);
         RecursiveWebParser recursiveWebParser = createRecursiveWebParser(pageRecursive);
 
         pageExecutor = applicationContext.getBean(ThreadPoolExecutor.class);
@@ -115,10 +137,14 @@ public class IndexingServiceImpl implements IndexingService {
         try {
             future.get();
         } catch (ExecutionException | InterruptedException ex) {
-            ex.getCause().printStackTrace();
+            LOGGER.error("Exception is thrown", ex);
         }
 
-        pageExecutor = null;
+        if (pageExecutor != null) {
+            pageExecutor = null;
+            LOGGER.info("End indexing page: " + url);
+        }
+
         isIndexing.set(false);
     }
 
@@ -129,7 +155,10 @@ public class IndexingServiceImpl implements IndexingService {
     }
 
     private void awaitSiteIndexing(Site site, ForkJoinPool pool) {
-        PageIntrospect pageRecursive = new PageIntrospect(site.getName(), site.getUrl() + "/");
+        String name = site.getName();
+        String url = site.getUrl();
+
+        PageIntrospect pageRecursive = new PageIntrospect(name, url + "/");
         pool.execute(createRecursiveWebParser(pageRecursive, pool, site));
         try {
             boolean isNotTimeout = pool.awaitTermination(5, TimeUnit.HOURS);
@@ -137,32 +166,37 @@ public class IndexingServiceImpl implements IndexingService {
             if (!isNotTimeout) {
                 shutdownNowAndAwait(pool);
                 failedSiteIfIndexing(site, "TIMEOUT");
+                LOGGER.warn("Site " + name + "[" + url + "] indexing TIMEOUT");
             } else if (site.getStatus() == Status.INDEXING) {
                 site.setLastError(null);
                 site.setStatus(Status.INDEXED);
                 siteRepository.save(site);
+                LOGGER.debug("Site " + name + "[" + url + "] has been indexed");
             }
         } catch (InterruptedException ex) {
             failedSiteIfIndexing(site, ex.getMessage());
+            LOGGER.error("Exception is thrown", ex);
         }
     }
 
     private boolean awaitDataDeleting() {
         try {
             deleteExecutor = applicationContext.getBean(ThreadPoolExecutor.class);
-            if (!dataManager.deleteOldData(deleteExecutor) ||
-                    indexingSites.keySet().stream().allMatch(site -> site.getStatus() == Status.FAILED)) {
+            if (!dataManager.deleteOldData(deleteExecutor)) {
+                LOGGER.warn("Data deleting TIMEOUT");
                 return false;
             }
 
         } catch (InterruptedException ex) {
             indexingSites.keySet().forEach(site -> failedSiteIfIndexing(site, ex.getMessage()));
+            LOGGER.error("Indexing FAILED", ex);
             return false;
 
         } finally {
             deleteExecutor = null;
         }
 
+        LOGGER.debug("Old data has been deleted successfully");
         return true;
     }
 
@@ -199,5 +233,6 @@ public class IndexingServiceImpl implements IndexingService {
         pageRepository.saveAllAndFlush(pageQueue);
         pageQueue.clear();
         indexingSites.clear();
+        LOGGER.debug("Resources are flushed and cleared");
     }
 }

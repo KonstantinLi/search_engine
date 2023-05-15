@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
 import org.jsoup.Jsoup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 import redis.clients.jedis.Jedis;
@@ -30,6 +32,7 @@ import java.util.stream.Collectors;
 public class SearchServiceImpl implements SearchService {
     private static final int MOST_POPULAR_LEMMAS = 100;
     private static final int LIMIT_SNIPPET_LENGTH = 300;
+    private static final Logger LOGGER = LoggerFactory.getLogger(SearchServiceImpl.class);
 
     private final IndexRepository indexRepository;
     private final LemmaRepository lemmaRepository;
@@ -47,9 +50,11 @@ public class SearchServiceImpl implements SearchService {
             @PositiveOrZero int offset,
             @PositiveOrZero int limit) {
 
-        String siteName = sites.size() == 1 ? sites.get(0).getName() : "all";
+        LOGGER.info("Search request [limit=" + limit + ", offset=" + offset + "]: " + query);
 
+        String siteName = sites.size() == 1 ? sites.get(0).getName() : "all";
         SearchResponse deserializedResponse = getResponse(query, siteName);
+
         if (deserializedResponse != null) {
             limitAndOffset(deserializedResponse, limit, offset);
             return deserializedResponse;
@@ -244,14 +249,18 @@ public class SearchServiceImpl implements SearchService {
         try {
             byte[] serializedResponse = Serializer.serialize(searchResponse);
             jedis.hset("query: ".concat(site).getBytes(), query.getBytes(), serializedResponse);
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.error("Exception is thrown", ex);
+        }
     }
 
     private SearchResponse getResponse(String query, String site) {
         try {
             byte[] serializedResponse = jedis.hget("query: ".concat(site).getBytes(), query.getBytes());
             return (SearchResponse) Serializer.deserialize(serializedResponse);
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            LOGGER.error("Exception is thrown", ex);
+        }
         return null;
     }
 
