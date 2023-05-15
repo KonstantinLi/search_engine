@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -22,11 +21,6 @@ import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.text.BreakIterator;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -36,7 +30,6 @@ import java.util.stream.Collectors;
 public class SearchServiceImpl implements SearchService {
     private static final int MOST_POPULAR_LEMMAS = 100;
     private static final int LIMIT_SNIPPET_LENGTH = 300;
-    private static final int LIMIT_SENTENCE_LENGTH = 120;
 
     private final IndexRepository indexRepository;
     private final LemmaRepository lemmaRepository;
@@ -125,12 +118,12 @@ public class SearchServiceImpl implements SearchService {
     private String makeSnippet(Page page, Map<String, Double> lemmaFrequency) {
         String content = lemmaFinder.clearHTML(page.getContent());
 
-        List<SentenceLemma> sentenceLemmaList = splitIntoSentences(content).stream()
-                .map(sentence -> findLemmasInSentence(sentence, lemmaFrequency))
+        List<SentenceLemma> sentenceLemmaList = SentenceUtil.splitIntoSentences(content).stream()
+                .map(sentence -> SentenceUtil.findLemmasInSentence(lemmaFinder, sentence, lemmaFrequency))
                 .filter(dto -> dto.getLemmaFrequency() != null && !dto.getLemmaFrequency().isEmpty())
                 .toList();
 
-        List<String> sortedSentences = sortSentencesByLemmaRarityAndCount(sentenceLemmaList);
+        List<String> sortedSentences = SentenceUtil.sortSentencesByLemmaRarityAndCount(sentenceLemmaList);
 
         StringBuilder builder = new StringBuilder();
         int sentenceNumber = 0;
@@ -138,115 +131,11 @@ public class SearchServiceImpl implements SearchService {
         while (builder.length() < LIMIT_SNIPPET_LENGTH && sentenceNumber < sortedSentences.size()) {
             String sentence = sortedSentences.get(sentenceNumber++).trim();
 
-            builder.append(limitSentence(sentence));
+            builder.append(SentenceUtil.limitSentence(sentence));
             builder.append(" ");
         }
 
         return builder.toString();
-    }
-
-    private String limitSentence(String sentence) {
-        int length = sentence.length();
-
-        if (length <= LIMIT_SENTENCE_LENGTH)
-            return sentence;
-
-        int startLemma = sentence.indexOf("<b>");
-        int endLemma = sentence.indexOf("</b>") + 4;
-
-        if (endLemma - startLemma > LIMIT_SENTENCE_LENGTH)
-            return "..." + sentence.substring(startLemma, endLemma) + "...";
-
-        int remainLength = LIMIT_SENTENCE_LENGTH - (endLemma - startLemma) / 2;
-
-        int start = startLemma - remainLength < 0
-                ? 0
-                : sentence.indexOf(" ", startLemma - remainLength) + 1;
-        int end = endLemma + remainLength > length
-                ? length
-                : sentence.substring(endLemma, endLemma + remainLength).lastIndexOf(" ") + endLemma;
-
-        String cropped = sentence.substring(start, end);
-        if (start > 0)
-            cropped = "..." + cropped;
-        if (end < length)
-            cropped += "...";
-
-        return cropped;
-    }
-
-    private SentenceLemma findLemmasInSentence(String sentence, Map<String, Double> lemmaFrequency) {
-        Map<String, Double> lemmasInSentence = new HashMap<>();
-        String[] words = Arrays.stream(lemmaFinder.russianWords(sentence)).distinct().toArray(String[]::new);
-
-        for (String word : words) {
-            String lemma = lemmaFinder.getFirstNormalForm(word);
-            if (!lemma.isBlank() && lemmaFrequency.containsKey(lemma)) {
-                lemmasInSentence.put(lemma, lemmaFrequency.get(lemma));
-                sentence = StringUtils.replaceIgnoreCase(sentence, word, "<b>" + word + "</b>");
-            }
-        }
-
-        SentenceLemma sentenceLemma = new SentenceLemma();
-        sentenceLemma.setText(sentence);
-        sentenceLemma.setLemmaFrequency(lemmasInSentence);
-
-        return sentenceLemma;
-    }
-
-    private List<String> splitIntoSentences(String text) {
-        List<String> sentences = new ArrayList<>();
-
-        BreakIterator iterator = BreakIterator.getSentenceInstance();
-        iterator.setText(text);
-
-        int start = iterator.first();
-        for (int end = iterator.next(); end != BreakIterator.DONE; start = end, end = iterator.next()) {
-            sentences.add(text.substring(start, end));
-        }
-
-        return sentences;
-    }
-
-    private List<String> sortSentencesByLemmaRarityAndCount(List<SentenceLemma> sentenceLemmaList) {
-        return sentenceLemmaList.stream()
-                .sorted(sentenceComparator())
-                .map(SentenceLemma::getText)
-                .toList();
-    }
-
-    private Comparator<SentenceLemma> sentenceComparator() {
-        Comparator<SentenceLemma> compareByLemmaRarity = (o1, o2) -> {
-            Map<String, Double> lemmaFrequency1 = o1.getLemmaFrequency();
-            Map<String, Double> lemmaFrequency2 = o2.getLemmaFrequency();
-
-            List<Double> sortedFrequencies1 = new ArrayList<>(lemmaFrequency1.values());
-            List<Double> sortedFrequencies2 = new ArrayList<>(lemmaFrequency2.values());
-
-            Collections.sort(sortedFrequencies1);
-            Collections.sort(sortedFrequencies2);
-
-            Iterator<Double> iterator1 = sortedFrequencies1.iterator();
-            Iterator<Double> iterator2 = sortedFrequencies2.iterator();
-
-            Double mostRareLemma1;
-            Double mostRareLemma2;
-
-            while (iterator1.hasNext() && iterator2.hasNext()) {
-                mostRareLemma1 = iterator1.next();
-                mostRareLemma2 = iterator2.next();
-
-                int compare = Double.compare(mostRareLemma1, mostRareLemma2);
-                if (compare != 0)
-                    return compare;
-            }
-
-            return 0;
-        };
-
-        return compareByLemmaRarity.thenComparing(
-                dto -> dto.getLemmaFrequency().size(),
-                Comparator.reverseOrder());
     }
 
     private Map<Page, Double> findAllPagesWithLemmas(Map<String, Double> averageFrequency, List<Site> sites) {
@@ -352,37 +241,21 @@ public class SearchServiceImpl implements SearchService {
     }
 
     private void saveResponse(String query, String site, SearchResponse searchResponse) {
-        byte[] serializedResponse = serialize(searchResponse);
-        jedis.hset("query: ".concat(site).getBytes(), query.getBytes(), serializedResponse);
+        try {
+            byte[] serializedResponse = Serializer.serialize(searchResponse);
+            jedis.hset("query: ".concat(site).getBytes(), query.getBytes(), serializedResponse);
+        } catch (Exception ignored) {}
     }
 
     private SearchResponse getResponse(String query, String site) {
-        byte[] serializedResponse = jedis.hget("query: ".concat(site).getBytes(), query.getBytes());
-        return (SearchResponse) deserialize(serializedResponse);
-    }
-
-    private byte[] serialize(Object object) {
         try {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            ObjectOutputStream oos = new ObjectOutputStream(baos);
-            oos.writeObject(object);
-
-            return baos.toByteArray();
+            byte[] serializedResponse = jedis.hget("query: ".concat(site).getBytes(), query.getBytes());
+            return (SearchResponse) Serializer.deserialize(serializedResponse);
         } catch (Exception ignored) {}
-
         return null;
     }
 
-    private Object deserialize(byte[] bytes) {
-        try {
-            ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
-            ObjectInputStream ois = new ObjectInputStream(bais);
-            return ois.readObject();
-        } catch (Exception ignored) {}
-
-        return null;
-    }
-
+    @Override
     public List<Site> getAllSites() {
         return siteRepository.findAll();
     }
