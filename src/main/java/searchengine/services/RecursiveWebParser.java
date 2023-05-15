@@ -23,8 +23,8 @@ import searchengine.repositories.PageRepository;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Queue;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveAction;
 import java.util.stream.Collectors;
@@ -43,10 +43,9 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
     @Value("${spring.jpa.properties.hibernate.jdbc.batch_size}")
     private int batchSize;
     private PageIntrospect pageRecursive;
-    private Queue<Page> pageQueue;
+    private ConcurrentLinkedQueue<Page> pageQueue;
     private ForkJoinPool pool;
     private Site site;
-
 
     @SneakyThrows(WebParserInterruptedException.class)
     @Override

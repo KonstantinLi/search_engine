@@ -13,7 +13,10 @@ import searchengine.model.Status;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -25,10 +28,10 @@ public class IndexingServiceImpl implements IndexingService {
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
 
-    private final Queue<Page> pageQueue = new ConcurrentLinkedQueue<>();
     private final Map<Site, ForkJoinPool> indexingSites =
             Collections.synchronizedMap(new HashMap<>());
     private final AtomicBoolean isIndexing = new AtomicBoolean();
+    private final ConcurrentLinkedQueue<Page> pageQueue = new ConcurrentLinkedQueue<>();
 
     private ExecutorService deleteExecutor;
     private ExecutorService pageExecutor;
