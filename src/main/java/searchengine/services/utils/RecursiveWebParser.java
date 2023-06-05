@@ -1,4 +1,4 @@
-package searchengine.services;
+package searchengine.services.utils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -20,9 +20,12 @@ import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.repositories.IndexRepository;
 import searchengine.repositories.PageRepository;
+import searchengine.services.interfaces.LemmaService;
+import searchengine.services.interfaces.SiteService;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ForkJoinPool;
@@ -33,16 +36,18 @@ import java.util.stream.Collectors;
 @Scope("prototype")
 @RequiredArgsConstructor
 @Setter
-class RecursiveWebParser extends RecursiveAction implements Cloneable {
+public class RecursiveWebParser extends RecursiveAction implements Cloneable {
     private final JsoupConnectionConfig jsoupConnectionConfig;
+    private final PropertiesUtil propertiesUtil;
     private final IndexRepository indexRepository;
     private final PageRepository pageRepository;
-    private final DataManager dataManager;
+    private final LemmaService lemmaService;
+    private final SiteService siteService;
     private final Jedis jedis;
 
     @Value("${spring.jpa.properties.hibernate.jdbc.batch_size}")
     private int batchSize;
-    private PageIntrospect pageRecursive;
+    private PageIntrospect page;
     private ConcurrentLinkedQueue<Page> pageQueue;
     private ForkJoinPool pool;
     private Site site;
@@ -52,14 +57,14 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
     protected void compute() {
         try {
             Document doc = parsePage();
-            dataManager.updateSiteStatusTime(site);
+            siteService.updateSiteStatusTime(site);
 
             synchronized (pageQueue) { // ensure other threads wait when a thread captured the monitor provide multi-insert operation
                 Page page = getPage();
                 if (page.getPath().length() <= 1000) {
                     pageQueue.add(page);
                 }
-                dataManager.insertPagesIfCountIsMoreThan(pageQueue, batchSize);
+                insertPagesIfCountIsMoreThan(pageQueue, batchSize);
             }
 
             Collection<RecursiveWebParser> recursiveWebParsers =
@@ -75,40 +80,14 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
 
         } catch (IOException ignored) {
         } catch (InterruptedException ex) {
-            throw new WebParserInterruptedException(pageRecursive.getDomain());
+            throw new WebParserInterruptedException(page.getDomain());
         }
-    }
-
-    public Document parsePage() throws IOException {
-        String url = pageRecursive.getUrl();
-
-        if (!isValidUrl(url)) {
-            throw new InvalidURLException(url);
-        }
-
-        Connection.Response response = urlConnect(url);
-        Document doc = response.parse();
-
-        pageRecursive.setContent(doc.html());
-        pageRecursive.setCode(HttpStatus.valueOf(response.statusCode()));
-
-        return doc;
-    }
-
-    public Page getPage() {
-        Page page = new Page();
-        page.setPath(pageRecursive.getPath());
-        page.setContent(pageRecursive.getContent());
-        page.setCode(pageRecursive.getCode());
-        page.setSite(site);
-
-        return page;
     }
 
     public Callable<Void> pageIndexingCallable() {
-        String mainUrl = pageRecursive.getMainUrl();
-        String path = pageRecursive.getPath();
-        Site site = dataManager.getSiteByUrlInConfig(mainUrl);
+        String mainUrl = page.getMainUrl();
+        String path = page.getPath();
+        Site site = propertiesUtil.getSiteByUrlInConfig(mainUrl);
 
         return () -> {
             try {
@@ -119,21 +98,47 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
                     page = pageRepository.save(getPage());
                 } else {
                     indexRepository.deleteAllByPage(page);
-                    dataManager.decrementLemmaFrequencyOrDelete(page);
+                    lemmaService.decrementLemmaFrequencyOrDelete(page);
                 }
-                dataManager.collectAndSaveLemmas(page);
+                lemmaService.saveLemmas(page);
 
                 return null;
             } catch (IOException ex) {
-                throw new PageAbsentException(pageRecursive.getUrl());
+                throw new PageAbsentException(page.getUrl());
             }
         };
     }
 
+    private Document parsePage() throws IOException {
+        String url = page.getUrl();
+
+        if (!isValidUrl(url)) {
+            throw new InvalidURLException(url);
+        }
+
+        Connection.Response response = urlConnect(url);
+        Document doc = response.parse();
+
+        page.setContent(doc.html());
+        page.setCode(HttpStatus.valueOf(response.statusCode()));
+
+        return doc;
+    }
+
+    private Page getPage() {
+        Page page = new Page();
+        page.setPath(this.page.getPath());
+        page.setContent(this.page.getContent());
+        page.setCode(this.page.getCode());
+        page.setSite(site);
+
+        return page;
+    }
+
     private Collection<String> validLinks(Document doc) {
-        String mainUrl = pageRecursive.getMainUrl() + "/";
-        String url = pageRecursive.getUrl();
-        String name = pageRecursive.getName();
+        String mainUrl = page.getMainUrl() + "/";
+        String url = page.getUrl();
+        String name = page.getName();
 
         Elements links = doc.select("a");
         return links.stream()
@@ -141,7 +146,7 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
                 .filter(link -> link.startsWith(mainUrl)
                         && !link.equals(mainUrl)
                         && !link.equals(url))
-                .filter(dataManager::checkTypeUrl)
+                .filter(propertiesUtil::checkTypeUrl)
                 .filter(link -> {
                     synchronized (jedis) { // ensure links are checked and added consistently
                         return jedis.sadd(name, link) != 0;
@@ -152,14 +157,14 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
 
     private Collection<RecursiveWebParser> getRecursiveWebParsers(Collection<String> links) {
         return links.stream()
-                .map(link -> getChildParser(new PageIntrospect(pageRecursive.getName(), link)))
+                .map(link -> getChildParser(new PageIntrospect(page.getName(), link)))
                 .collect(Collectors.toSet());
     }
 
     private RecursiveWebParser getChildParser(PageIntrospect child) {
         try {
             RecursiveWebParser childParser = clone();
-            childParser.setPageRecursive(child);
+            childParser.setPage(child);
             childParser.setPageQueue(pageQueue);
             childParser.setPool(pool);
             childParser.setSite(site);
@@ -179,12 +184,20 @@ class RecursiveWebParser extends RecursiveAction implements Cloneable {
                 .execute();
     }
 
+    private void insertPagesIfCountIsMoreThan(Queue<Page> pageQueue, int size) {
+        if (pageQueue.size() > size) {
+            pageRepository.saveAll(pageQueue);
+            pageQueue.forEach(lemmaService::saveLemmas);
+            pageQueue.clear();
+        }
+    }
+
     private void shutDownPoolIfExecuted() {
-        String mainUrl = pageRecursive.getMainUrl() + "/";
-        String url = pageRecursive.getUrl();
+        String mainUrl = page.getMainUrl() + "/";
+        String url = page.getUrl();
 
         if (mainUrl.equals(url)) {
-            jedis.del(pageRecursive.getName());
+            jedis.del(page.getName());
             pool.shutdownNow();
         }
     }

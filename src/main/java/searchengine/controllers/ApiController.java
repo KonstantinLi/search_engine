@@ -14,7 +14,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import searchengine.dto.PageData;
 import searchengine.dto.SearchResponse;
-import searchengine.services.PageIntrospect;
 import searchengine.dto.statistics.DefaultResponse;
 import searchengine.dto.statistics.ErrorResponse;
 import searchengine.dto.statistics.StatisticsResponse;
@@ -22,9 +21,12 @@ import searchengine.exceptions.IndexingException;
 import searchengine.exceptions.NotIndexingException;
 import searchengine.exceptions.OutOfSitesBoundsException;
 import searchengine.model.Site;
-import searchengine.services.IndexingService;
-import searchengine.services.SearchService;
-import searchengine.services.StatisticsService;
+import searchengine.services.utils.PageIntrospect;
+import searchengine.services.interfaces.IndexingService;
+import searchengine.services.interfaces.SearchService;
+import searchengine.services.interfaces.SiteService;
+import searchengine.services.interfaces.StatisticsService;
+import searchengine.services.utils.PropertiesUtil;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -35,9 +37,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ApiController {
 
+    private final PropertiesUtil propertiesUtil;
     private final StatisticsService statisticsService;
     private final IndexingService indexingService;
     private final SearchService searchService;
+    private final SiteService siteService;
 
     @GetMapping("/statistics")
     public ResponseEntity<StatisticsResponse> statistics() {
@@ -80,7 +84,7 @@ public class ApiController {
             pageData.setUrl(url + "/");
 
         PageIntrospect page = new PageIntrospect(pageData.getUrl());
-        if (!indexingService.siteIsAvailableInConfig(page.getMainUrl()))
+        if (!propertiesUtil.siteIsAvailableInConfig(page.getMainUrl()))
             throw new OutOfSitesBoundsException();
 
         if (indexingService.isIndexing())
@@ -104,7 +108,7 @@ public class ApiController {
             @RequestParam(required = false, defaultValue = "0") @PositiveOrZero(message = "Значение offset должно быть больше или равно 0") Integer offset,
             @RequestParam(required = false, defaultValue = "20") @PositiveOrZero(message = "Значение limit должно быть больше или равно 0") Integer limit) {
 
-        List<Site> sites = searchService.getAllSites()
+        List<Site> sites = siteService.getAllSites()
                 .stream()
                 .filter(site -> mainUrl == null || site.getUrl().equals(mainUrl))
                 .toList();

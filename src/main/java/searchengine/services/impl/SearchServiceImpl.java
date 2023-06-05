@@ -1,4 +1,4 @@
-package searchengine.services;
+package searchengine.services.impl;
 
 import jakarta.annotation.PreDestroy;
 import jakarta.validation.constraints.NotEmpty;
@@ -22,6 +22,10 @@ import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
+import searchengine.services.interfaces.SearchService;
+import searchengine.services.interfaces.SiteService;
+import searchengine.services.utils.SentenceUtil;
+import searchengine.services.utils.Serializer;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -30,15 +34,16 @@ import java.util.stream.Collectors;
 @Validated
 @RequiredArgsConstructor
 public class SearchServiceImpl implements SearchService {
-    private static final int MOST_POPULAR_LEMMAS = 100;
     private static final int LIMIT_SNIPPET_LENGTH = 300;
+    private static final int MOST_POPULAR_LEMMAS_COUNT = 100;
     private static final Logger LOGGER = LoggerFactory.getLogger(SearchServiceImpl.class);
 
     private final IndexRepository indexRepository;
     private final LemmaRepository lemmaRepository;
     private final PageRepository pageRepository;
     private final SiteRepository siteRepository;
-    private final LemmaFinder lemmaFinder;
+    private final LemmaServiceImpl lemmaFinder;
+    private final SiteService siteService;
     private final Jedis jedis;
 
     private List<String> mostPopularLemmas;
@@ -56,7 +61,7 @@ public class SearchServiceImpl implements SearchService {
         SearchResponse deserializedResponse = getResponse(query, siteName);
 
         if (deserializedResponse != null) {
-            limitAndOffset(deserializedResponse, limit, offset);
+            limitAndOffset(deserializedResponse, offset, limit);
             return deserializedResponse;
         }
 
@@ -65,6 +70,13 @@ public class SearchServiceImpl implements SearchService {
                     produceLemmasWithAverageFrequency(lemmaRepository.findAll()));
         }
 
+        SearchResponse searchResponse = makeResponse(query, offset, limit, sites);
+        saveResponse(query, siteName, searchResponse);
+
+        return searchResponse;
+    }
+
+    private SearchResponse makeResponse(String query, int offset, int limit, List<Site> sites) {
         Map<String, Double> lemmasInQuery = removeMostPopularLemmas(
                 averageFrequencyOfLemmasInQuery(query));
 
@@ -78,16 +90,15 @@ public class SearchServiceImpl implements SearchService {
         searchResponse.setCount(snippetItemList.size());
         searchResponse.setData(snippetItemList);
 
-        saveResponse(query, siteName, searchResponse);
+        limitAndOffset(searchResponse, offset, limit);
 
-        limitAndOffset(searchResponse, limit, offset);
         return searchResponse;
     }
 
     private void limitAndOffset(
             SearchResponse searchResponse,
-            @PositiveOrZero int limit,
-            @PositiveOrZero int offset) {
+            @PositiveOrZero int offset,
+            @PositiveOrZero int limit) {
 
         List<SnippetItem> snippetItemList = searchResponse.getData()
                 .stream()
@@ -121,7 +132,7 @@ public class SearchServiceImpl implements SearchService {
     }
 
     private String makeSnippet(Page page, Map<String, Double> lemmaFrequency) {
-        String content = lemmaFinder.clearHTML(page.getContent());
+        String content = Jsoup.parse(page.getContent()).text();
 
         List<SentenceLemma> sentenceLemmaList = SentenceUtil.splitIntoSentences(content).stream()
                 .map(sentence -> SentenceUtil.findLemmasInSentence(lemmaFinder, sentence, lemmaFrequency))
@@ -220,7 +231,7 @@ public class SearchServiceImpl implements SearchService {
                 .stream()
                 .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
                 .map(Map.Entry::getKey)
-                .limit(MOST_POPULAR_LEMMAS)
+                .limit(MOST_POPULAR_LEMMAS_COUNT)
                 .toList();
     }
 
@@ -249,6 +260,8 @@ public class SearchServiceImpl implements SearchService {
         try {
             byte[] serializedResponse = Serializer.serialize(searchResponse);
             jedis.hset("query: ".concat(site).getBytes(), query.getBytes(), serializedResponse);
+        } catch (NullPointerException ex) {
+            LOGGER.info("There's no cached query: " + query);
         } catch (Exception ex) {
             LOGGER.error("Exception is thrown", ex);
         }
@@ -258,15 +271,13 @@ public class SearchServiceImpl implements SearchService {
         try {
             byte[] serializedResponse = jedis.hget("query: ".concat(site).getBytes(), query.getBytes());
             return (SearchResponse) Serializer.deserialize(serializedResponse);
+        } catch (NullPointerException ex) {
+            LOGGER.info("There's no cached query: " + query);
+            return null;
         } catch (Exception ex) {
             LOGGER.error("Exception is thrown", ex);
+            return null;
         }
-        return null;
-    }
-
-    @Override
-    public List<Site> getAllSites() {
-        return siteRepository.findAll();
     }
 
     private String getTitle(Page page) {
@@ -275,7 +286,7 @@ public class SearchServiceImpl implements SearchService {
 
     @PreDestroy
     private void clearCache() {
-        getAllSites().forEach(site -> jedis.del("query: ".concat(site.getName())));
+        siteService.getAllSites().forEach(site -> jedis.del("query: ".concat(site.getName())));
         jedis.del("query: all");
     }
 }

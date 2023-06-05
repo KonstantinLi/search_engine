@@ -1,4 +1,4 @@
-package searchengine.services;
+package searchengine.services.impl;
 
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -14,6 +14,12 @@ import searchengine.model.Site;
 import searchengine.model.Status;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
+import searchengine.services.interfaces.IndexingService;
+import searchengine.services.interfaces.SiteService;
+import searchengine.services.utils.DataCleaner;
+import searchengine.services.utils.PageIntrospect;
+import searchengine.services.utils.PropertiesUtil;
+import searchengine.services.utils.RecursiveWebParser;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -28,7 +34,9 @@ import java.util.stream.Collectors;
 public class IndexingServiceImpl implements IndexingService {
     private static final Logger LOGGER = LoggerFactory.getLogger(IndexingServiceImpl.class);
 
-    private final DataManager dataManager;
+    private final SiteService siteService;
+    private final DataCleaner dataCleaner;
+    private final PropertiesUtil propertiesUtil;
     private final ApplicationContext applicationContext;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
@@ -45,20 +53,12 @@ public class IndexingServiceImpl implements IndexingService {
     @Override
     public void startIndexing() {
         isIndexing.set(true);
-        List<SiteConfig> sites = dataManager.getSitesInConfig();
+
+        List<SiteConfig> sites = propertiesUtil.getSitesInConfig();
+        sites.forEach(this::putSiteToIndex);
 
         String siteNames = sites.stream().map(SiteConfig::getName).collect(Collectors.joining(", "));
         LOGGER.info("Start indexing: " + siteNames);
-
-        for (SiteConfig siteConfig: sites) {
-            String name = siteConfig.getName();
-            String url = siteConfig.getUrl();
-
-            Site site = dataManager.saveSite(name, url, null, Status.INDEXING);
-            ForkJoinPool pool = applicationContext.getBean(ForkJoinPool.class);
-
-            indexingSites.put(site, pool);
-        }
 
         if (!awaitDataDeleting()) {
             flushAndClearResources();
@@ -99,9 +99,9 @@ public class IndexingServiceImpl implements IndexingService {
             if (deleteExecutor != null) {
                 shutdownNowAndAwait(deleteExecutor);
             } else {
+                Jedis jedis = applicationContext.getBean(Jedis.class);
                 indexingSites.forEach((site, pool) -> {
                     try {
-                        Jedis jedis = applicationContext.getBean(Jedis.class);
                         shutdownNowAndAwait(pool);
                         jedis.del(site.getName());
                     } catch (InterruptedException ex) {
@@ -128,8 +128,8 @@ public class IndexingServiceImpl implements IndexingService {
         String url = pageData.getUrl();
         LOGGER.info("Start indexing page: " + url);
 
-        PageIntrospect pageRecursive = new PageIntrospect(url);
-        RecursiveWebParser recursiveWebParser = createRecursiveWebParser(pageRecursive);
+        PageIntrospect pageIntrospect = new PageIntrospect(url);
+        RecursiveWebParser recursiveWebParser = createRecursiveWebParser(pageIntrospect);
 
         pageExecutor = applicationContext.getBean(ThreadPoolExecutor.class);
         Future<Void> future = pageExecutor.submit(recursiveWebParser.pageIndexingCallable());
@@ -148,18 +148,12 @@ public class IndexingServiceImpl implements IndexingService {
         isIndexing.set(false);
     }
 
-    @Override
-    public boolean siteIsAvailableInConfig(String url) {
-        List<SiteConfig> sites = dataManager.getSitesInConfig();
-        return sites.stream().anyMatch(siteConfig -> siteConfig.getUrl().equals(url));
-    }
-
     private void awaitSiteIndexing(Site site, ForkJoinPool pool) {
         String name = site.getName();
         String url = site.getUrl();
 
-        PageIntrospect pageRecursive = new PageIntrospect(name, url + "/");
-        pool.execute(createRecursiveWebParser(pageRecursive, pool, site));
+        PageIntrospect pageIntrospect = new PageIntrospect(name, url + "/");
+        pool.execute(createRecursiveWebParser(pageIntrospect, pool, site));
         try {
             boolean isNotTimeout = pool.awaitTermination(5, TimeUnit.HOURS);
 
@@ -182,12 +176,14 @@ public class IndexingServiceImpl implements IndexingService {
     private boolean awaitDataDeleting() {
         try {
             deleteExecutor = applicationContext.getBean(ThreadPoolExecutor.class);
-            if (!dataManager.deleteOldData(deleteExecutor)) {
-                LOGGER.warn("Data deleting TIMEOUT");
+            List<SiteConfig> sites = propertiesUtil.getSitesInConfig();
+
+            if (!dataCleaner.deleteOldData(deleteExecutor, sites)) {
+                LOGGER.warn("Old data hasn't been deleted");
                 return false;
             }
 
-        } catch (InterruptedException ex) {
+        } catch (InterruptedException | ExecutionException ex) {
             indexingSites.keySet().forEach(site -> failedSiteIfIndexing(site, ex.getMessage()));
             LOGGER.error("Indexing FAILED", ex);
             return false;
@@ -205,18 +201,18 @@ public class IndexingServiceImpl implements IndexingService {
         pool.awaitTermination(1, TimeUnit.MINUTES);
     }
 
-    private RecursiveWebParser createRecursiveWebParser(PageIntrospect pageRecursive) {
-        Site site = dataManager.getSiteByUrlInConfig(pageRecursive.getMainUrl());
-        return createRecursiveWebParser(pageRecursive, null, site);
+    private RecursiveWebParser createRecursiveWebParser(PageIntrospect pageIntrospect) {
+        Site site = propertiesUtil.getSiteByUrlInConfig(pageIntrospect.getMainUrl());
+        return createRecursiveWebParser(pageIntrospect, null, site);
     }
 
-    private RecursiveWebParser createRecursiveWebParser(PageIntrospect pageRecursive, ForkJoinPool pool, Site site) {
+    private RecursiveWebParser createRecursiveWebParser(PageIntrospect pageIntrospect, ForkJoinPool pool, Site site) {
         RecursiveWebParser parser = applicationContext.getBean(RecursiveWebParser.class);
 
         parser.setSite(site);
         parser.setPool(pool);
         parser.setPageQueue(pageQueue);
-        parser.setPageRecursive(pageRecursive);
+        parser.setPage(pageIntrospect);
 
         return parser;
     }
@@ -227,6 +223,16 @@ public class IndexingServiceImpl implements IndexingService {
             site.setStatus(Status.FAILED);
             siteRepository.save(site);
         }
+    }
+
+    private void putSiteToIndex(SiteConfig siteConfig) {
+        String name = siteConfig.getName();
+        String url = siteConfig.getUrl();
+
+        Site site = siteService.saveSite(name, url, null, Status.INDEXING);
+        ForkJoinPool pool = applicationContext.getBean(ForkJoinPool.class);
+
+        indexingSites.put(site, pool);
     }
 
     private void flushAndClearResources() {

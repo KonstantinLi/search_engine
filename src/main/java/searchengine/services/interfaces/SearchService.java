@@ -1,4 +1,4 @@
-package searchengine.services;
+package searchengine.services.interfaces;
 
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -14,5 +14,4 @@ public interface SearchService {
             @NotNull List<Site> sites,
             @PositiveOrZero int offset,
             @PositiveOrZero int limit);
-    List<Site> getAllSites();
 }

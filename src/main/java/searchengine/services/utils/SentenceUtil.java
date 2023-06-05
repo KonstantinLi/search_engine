@@ -1,7 +1,8 @@
-package searchengine.services;
+package searchengine.services.utils;
 
 import org.apache.commons.lang3.StringUtils;
 import searchengine.dto.SentenceLemma;
+import searchengine.services.interfaces.LemmaService;
 
 import java.text.BreakIterator;
 import java.util.*;
@@ -40,15 +41,15 @@ public class SentenceUtil {
     }
 
     public static SentenceLemma findLemmasInSentence(
-            LemmaFinder lemmaFinder,
+            LemmaService lemmaService,
             String sentence,
             Map<String, Double> lemmaFrequency) {
 
         Map<String, Double> lemmasInSentence = new HashMap<>();
-        String[] words = Arrays.stream(lemmaFinder.russianWords(sentence)).distinct().toArray(String[]::new);
+        String[] words = Arrays.stream(lemmaService.splitToWords(sentence)).distinct().toArray(String[]::new);
 
         for (String word : words) {
-            String lemma = lemmaFinder.getFirstNormalForm(word);
+            String lemma = lemmaService.getFirstNormalForm(word);
             if (!lemma.isBlank() && lemmaFrequency.containsKey(lemma)) {
                 lemmasInSentence.put(lemma, lemmaFrequency.get(lemma));
                 sentence = StringUtils.replaceIgnoreCase(sentence, word, "<b>" + word + "</b>");

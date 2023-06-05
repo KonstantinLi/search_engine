@@ -1,4 +1,4 @@
-package searchengine.services;
+package searchengine.services.utils;
 
 import java.io.*;
 

@@ -1,4 +1,4 @@
-package searchengine.services;
+package searchengine.services.interfaces;
 
 import searchengine.dto.PageData;
 
@@ -7,5 +7,4 @@ public interface IndexingService {
     void startIndexing();
     void stopIndexing();
     boolean isIndexing();
-    boolean siteIsAvailableInConfig(String url);
 }
