@@ -125,7 +125,7 @@ public class IndexingServiceImpl implements IndexingService {
     public void indexPage(PageData pageData) {
         isIndexing.set(true);
 
-        String url = pageData.getUrl();
+        String url = getUrl(pageData);
         LOGGER.info("Start indexing page: " + url);
 
         PageIntrospect pageIntrospect = new PageIntrospect(url);
@@ -233,6 +233,13 @@ public class IndexingServiceImpl implements IndexingService {
         ForkJoinPool pool = applicationContext.getBean(ForkJoinPool.class);
 
         indexingSites.put(site, pool);
+    }
+
+    private String getUrl(PageData pageData) {
+        String url = pageData.getUrl();
+        if (!url.endsWith("/"))
+            pageData.setUrl(url + "/");
+        return url;
     }
 
     private void flushAndClearResources() {

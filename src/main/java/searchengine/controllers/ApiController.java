@@ -12,6 +12,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.validation.ObjectError;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import searchengine.annotations.AvailablePage;
 import searchengine.dto.PageData;
 import searchengine.dto.SearchResponse;
 import searchengine.dto.statistics.DefaultResponse;
@@ -19,14 +20,11 @@ import searchengine.dto.statistics.ErrorResponse;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.exceptions.IndexingException;
 import searchengine.exceptions.NotIndexingException;
-import searchengine.exceptions.OutOfSitesBoundsException;
 import searchengine.model.Site;
-import searchengine.services.utils.PageIntrospect;
 import searchengine.services.interfaces.IndexingService;
 import searchengine.services.interfaces.SearchService;
 import searchengine.services.interfaces.SiteService;
 import searchengine.services.interfaces.StatisticsService;
-import searchengine.services.utils.PropertiesUtil;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -36,8 +34,6 @@ import java.util.stream.Collectors;
 @Validated
 @RequiredArgsConstructor
 public class ApiController {
-
-    private final PropertiesUtil propertiesUtil;
     private final StatisticsService statisticsService;
     private final IndexingService indexingService;
     private final SearchService searchService;
@@ -50,52 +46,27 @@ public class ApiController {
 
     @GetMapping("/startIndexing")
     public ResponseEntity<DefaultResponse> startIndexing() {
-        if (indexingService.isIndexing())
-            throw new IndexingException();
-
+        throwIfIndexing();
         indexingService.startIndexing();
-
-        DefaultResponse response = new DefaultResponse();
-        response.setResult(true);
-
-        return new ResponseEntity<>(response, HttpStatus.OK);
+        return defaultResponse();
     }
 
     @GetMapping("/stopIndexing")
     public ResponseEntity<DefaultResponse> stopIndexing() {
-        if (!indexingService.isIndexing())
-            throw new NotIndexingException();
-
+        throwIfNotIndexing();
         indexingService.stopIndexing();
-
-        DefaultResponse response = new DefaultResponse();
-        response.setResult(true);
-
-        return new ResponseEntity<>(response, HttpStatus.OK);
+        return defaultResponse();
     }
 
     @PostMapping(value = "/indexPage", consumes = {MediaType.APPLICATION_FORM_URLENCODED_VALUE})
-    public ResponseEntity<DefaultResponse> indexPage(@Valid PageData pageData, BindingResult bindingResult) {
+    public ResponseEntity<DefaultResponse> indexPage(@Valid @AvailablePage PageData pageData, BindingResult bindingResult) {
         if (bindingResult.hasErrors())
             throw new RuntimeException(getErrorMessages(bindingResult));
 
-        String url = pageData.getUrl();
-        if (!url.endsWith("/"))
-            pageData.setUrl(url + "/");
-
-        PageIntrospect page = new PageIntrospect(pageData.getUrl());
-        if (!propertiesUtil.siteIsAvailableInConfig(page.getMainUrl()))
-            throw new OutOfSitesBoundsException();
-
-        if (indexingService.isIndexing())
-            throw new IndexingException();
-
+        throwIfIndexing();
         indexingService.indexPage(pageData);
 
-        DefaultResponse response = new DefaultResponse();
-        response.setResult(true);
-
-        return new ResponseEntity<>(response, HttpStatus.OK);
+        return defaultResponse();
     }
 
     @GetMapping("/search")
@@ -115,6 +86,22 @@ public class ApiController {
 
         SearchResponse searchResponse = searchService.search(query, sites, offset, limit);
         return new ResponseEntity<>(searchResponse, HttpStatus.OK);
+    }
+
+    private ResponseEntity<DefaultResponse> defaultResponse() {
+        DefaultResponse defaultResponse = new DefaultResponse();
+        defaultResponse.setResult(true);
+        return new ResponseEntity<>(defaultResponse, HttpStatus.OK);
+    }
+
+    private void throwIfIndexing() {
+        if (indexingService.isIndexing())
+            throw new IndexingException();
+    }
+
+    private void throwIfNotIndexing() {
+        if (!indexingService.isIndexing())
+            throw new NotIndexingException();
     }
 
     private String getErrorMessages(BindingResult bindingResult) {
