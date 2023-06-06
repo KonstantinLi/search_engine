@@ -57,8 +57,7 @@ public class SearchServiceImpl implements SearchService {
 
         LOGGER.info("Search request [limit=" + limit + ", offset=" + offset + "]: " + query);
 
-        String siteName = sites.size() == 1 ? sites.get(0).getName() : "all";
-        SearchResponse deserializedResponse = getResponse(query, siteName);
+        SearchResponse deserializedResponse = getResponse(query, getSiteName(sites));
 
         if (deserializedResponse != null) {
             limitAndOffset(deserializedResponse, offset, limit);
@@ -70,10 +69,7 @@ public class SearchServiceImpl implements SearchService {
                     produceLemmasWithAverageFrequency(lemmaRepository.findAll()));
         }
 
-        SearchResponse searchResponse = makeResponse(query, offset, limit, sites);
-        saveResponse(query, siteName, searchResponse);
-
-        return searchResponse;
+        return makeResponse(query, offset, limit, sites);
     }
 
     private SearchResponse makeResponse(String query, int offset, int limit, List<Site> sites) {
@@ -89,6 +85,8 @@ public class SearchServiceImpl implements SearchService {
         searchResponse.setResult(true);
         searchResponse.setCount(snippetItemList.size());
         searchResponse.setData(snippetItemList);
+
+        saveResponse(query, getSiteName(sites), searchResponse);
 
         limitAndOffset(searchResponse, offset, limit);
 
@@ -282,6 +280,10 @@ public class SearchServiceImpl implements SearchService {
 
     private String getTitle(Page page) {
         return Jsoup.parse(page.getContent()).title();
+    }
+
+    private String getSiteName(List<Site> sites) {
+        return sites.size() == 1 ? sites.get(0).getName() : "all";
     }
 
     @PreDestroy
