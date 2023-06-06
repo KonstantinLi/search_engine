@@ -22,7 +22,6 @@ public class LemmaServiceImpl implements LemmaService {
     private final LuceneMorphology luceneMorphology;
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
-    private final Queue<Index> indexQueue = new LinkedList<>();
 
     @Value("${spring.jpa.properties.hibernate.jdbc.batch_size}")
     private int batchSize;
@@ -38,16 +37,23 @@ public class LemmaServiceImpl implements LemmaService {
         List<Lemma> lemmas = lemmaRepository.findAllByLemmaIn(lemmaData.keySet());
         Iterator<Map.Entry<String, Integer>> iterator = lemmaData.entrySet().iterator();
 
+        Queue<Index> indexQueue = new LinkedList<>();
+
         while (iterator.hasNext() && !Thread.currentThread().isInterrupted()) {
             Map.Entry<String, Integer> entry = iterator.next();
-            saveLemma(entry, lemmas, page);
-            insertIndexesIfCountIsMoreThan(batchSize);
+            saveLemma(entry, lemmas, indexQueue, page);
+            insertIndexesIfCountIsMoreThan(indexQueue, batchSize);
         }
 
         indexRepository.saveAllAndFlush(indexQueue);
     }
 
-    private void saveLemma(Map.Entry<String, Integer> lemmaData, List<Lemma> existingLemmas, Page page) {
+    private void saveLemma(
+            Map.Entry<String, Integer> lemmaData,
+            List<Lemma> existingLemmas,
+            Queue<Index> indexQueue,
+            Page page) {
+
         String lemmaValue = lemmaData.getKey();
         Integer rank = lemmaData.getValue();
 
@@ -153,7 +159,7 @@ public class LemmaServiceImpl implements LemmaService {
         return false;
     }
 
-    private void insertIndexesIfCountIsMoreThan(int size) {
+    private void insertIndexesIfCountIsMoreThan(Queue<Index> indexQueue, int size) {
         if (indexQueue.size() > size) {
             indexRepository.saveAll(indexQueue);
             indexQueue.clear();
