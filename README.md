@@ -1,4 +1,4 @@
-<h1 align="center">Локальный поисковой движок по сайтам</h1>
+<h1 align="center">Local Search Engine</h1>
 
 <p align="center">
 
@@ -14,22 +14,23 @@
 
 ---
 
-## Описание
+## Description
 
-**Локальный поисковой движок** - высокотехнологичный, устойчивый к нагрузкам инструмент, предоставляющий API, в основу которого положены умные алгоритмы
-для индексации и дальнейшего анализа контента сайтов и их дочерних элементов - страниц. 
+**Local Search Engine** is a high-tech, load-tolerant tool that provides an API based on smart algorithms
+for indexing and further analysis of the content of sites and their child elements - pages.
 
-Вся информация, которая была обработана встроенным парсером, хранится
-в нормализованой базе данных на локальной машине. Таким образом, пользователь, который будет иметь доступ к веб-интерфейсу, способен совершать
-поисковые запросы по индексированым сайтам без доступа в Интернет.
+All information that has been processed by the built-in parser is stored
+in a normalized database on the local machine. Thus, the user who will have access to the web interface is able to perform
+search queries on indexed sites without Internet access.
 
 <img src="./readme_assets/search.gif" alt="search process" style="width: 100%">
 
 ---
 
-## Принцип работы
+## Working principle
 
-+ В ***конфигурационном файле*** перед запуском приложения задается список адресов сайтов и их имен, по которым движок должен осуществлять поиск.
++ In the ***config file***, before starting the application, a list of site addresses and their names is specified, by which the engine should search.
+
 ```yaml
 sites:
   - url: https://www.site.com
@@ -37,60 +38,60 @@ sites:
   - ...
 ```
 
-+ При отправке HTTP-запроса о начале индексации парсер **рекурсивно** обходит все доступные на сайтах страницы и **индексирует** их.
++ When sending an HTTP request to start indexing, the parser **recursively** goes through all the pages available on the sites and **indexes** them.
 
 <img src="./readme_assets/indexing.gif" alt="indexing" style="width: 100%">
 
-+ Пользователь так же имеет возможность проиндексировать **отдельную страницу**, которая принадлежить одному из сайтов в конфигурации.
++ The user also has the ability to index a **separate page** that belongs to one of the sites in the configuration.
 
 <img src="./readme_assets/index_page.gif" alt="index page" style="width: 100%">
 
-+ С помощью созданного индекса можно находить наиболее ***релевантные страницы*** по любому поисковому запросу.
++ Using the created index, you can find the most ***relevant pages*** for any search query.
 
-+ Отправленный поисковой запрос пользователя трансформируется в набор так называемых ***лемм*** - слов, приведенных в базовую форму.
++ The sent search query of the user is transformed into a set of so-called ***lemmas*** - words given in the basic form.
 
-+ В индексе ищутся страницы, на которых встречаются данные леммы.
++ The index searches for pages where these lemmas occur.
 
-+ Список найденных страниц ранжируется по релевантности и выдается пользователю в виде списка ***сниппетов*** - читабельных отрезков текста, содержащих искомую информацию.
++ The list of found pages is ranked by relevance and given to the user in the form of a list of ***snippets*** - readable sections of text containing the information you are looking for.
 
 <img src="./readme_assets/search.png" alt="snippet" style="width: 100%">
 
 ---
 
-## Затронутые проблемы
-### 1. Циклический обход страниц
-Парсер заведомо не знает точное количество страниц, которые нужно обойти, поэтому он обходит их **рекурсивно**, начиная с главной.
-> :exclamation: Любая страница может содержать не только ссылки на свои дочерние страницы, а так же ссылки на те страницы, которые находятся на несколько уровней **выше**!
+## Issues Affected
+### 1. Cycle through pages
+The parser obviously doesn't know the exact number of pages to crawl, so it crawls them **recursively**, starting from the main one.
+> :exclamation: Any page can contain not only links to its child pages, but also links to those pages that are several levels **above**!
 
-Наивный обход всех вложенных ссылок может привести к бесконечному циклу :repeat:. Решение проблемы заключается в двух вещах.
-+ `Первое` - это фильтрация ссылок. Вложенная ссылка **не должна**:
-  + ссылаться на внешний ресурс;
-  + иметь якорей или тип документа, отличный от **html**; 
-  + быть равна ссылке главной или текущей страницы.
+Naive traversal of all nested references can result in an infinite :repeat: loop. The solution to the problem lies in two things.
++ `First` is link filtering. A nested link **shouldn't**:
+  + link to an external resource;
+  + have anchors or document type other than **html**;
+  + be equal to the link of the main or current page.
 
-+ `Второе` - это **кеширование** ссылок. Для этого используется **Redis** и его структура данных _set_, которая хранит уникальные members по указанному key. 
-Если парсер уже побывал на какой-то странице, он об этом узнает из Redis :sunglasses:
++ `Second` is **caching** links. For this, **Redis** and its _set_ data structure are used, which stores unique members by the specified key.
+  If the parser has already visited some page, it will know about it from Redis :sunglasses:
 
-> Посмотреть реализацию метода **validLinks** можно [ТУТ](./src/main/java/searchengine/services/RecursiveWebParser.java).
+> You can see the implementation of the **validLinks** method [HERE](./src/main/java/searchengine/services/RecursiveWebParser.java).
 
-### 2. Минимизация количества запросов в БД
-I/O операции - узкое место в подавляющем большинстве систем. На оптимизацию работы с БД следует приделить пристальное внимание.
-Все данные (объекты сущностей) **буферизируются** и отправляются в БД пакетами, что способсвует значительному приросту в производительности. После завершения работы все
-оставшиеся в буфере данные сбрасываются в БД, и ресурсы очищаются. Поисковые запросы кешируются. 
+### 2. Minimizing the number of queries in the database
+I/O operations are the bottleneck in the vast majority of systems. Close attention should be paid to the optimization of work with the database.
+All data (entity objects) are **buffered** and sent to the database in batches, which contributes to a significant performance boost. After completion of all
+the data remaining in the buffer is flushed to the database, and the resources are cleared. Search queries are cached.
 
-> Можно забросить что угодно - но БД не бросай никогда. Она, как бывшая, будет всегда напоминать о себе :trollface:
+> You can drop anything - but never drop the database. She, as an ex, will always remind of herself :trollface:
 
-### 3. Ограничение ОЗУ в рамках приложения
-Виртуальной машине выделяется конечный объем памяти. Система использует технологию ORM, которая отображает полученные данные
-в виде объектов, хранящихся в heap. Система обрабатывает большой объем данных, что может вызвать переполнение этого heap и аварийно завершить свою работу:warning:.
-Поэтому информация предоставляется порционно, снижая нагрузку на систему.
+### 3. RAM limit within the application
+The virtual machine is allocated a finite amount of memory. The system uses ORM technology that displays the received data
+as objects stored in heap. The system is processing a large amount of data, which can cause this heap to overflow and crash :warning:.
+Therefore, information is provided in portions, reducing the load on the system.
 
-### 4. Реакция на стоп-сигнал
-Реализован механизм экстренного прекращения индексации: при вызове нужного HTTP-запроса система перерывает все рабочие таски.
+### 4. Reaction to a stoplight
+The indexing emergency termination mechanism has been implemented: when a necessary HTTP request is called, the system interrupts all work tasks.
 
 ___
 
-## Стек технологий
+## Technology stack
 + Java 17
 + Maven
 + Spring/Spring Boot 3, Thymeleaf
@@ -99,36 +100,36 @@ ___
 
 ---
 
-## Инструкции по локальному запуску программы
+## Instructions for running the program locally
 
-### Системные требования
+### System requirements
 
->**Процессор**: 4-Core Intel Xeon 500 Sequence, AMD Athlon X4 Bristol Ridge
-> 
->**Оперативная память**: 8 ГБ ОЗУ
-> 
->**Место на жестком диске**: 10 ГБ
+>**Processor**: 4-Core Intel Xeon 500 Sequence, AMD Athlon X4 Bristol Ridge
+>
+>**RAM**: 8GB RAM
+>
+>**Hard disk space**: 10 GB
 
-### Порядок действий
-+ Для начала необходимо создать пустую базу данных в PostgreSQL. Название можно придумать любое.
+### Procedure
++ First you need to create an empty database in PostgreSQL. You can come up with any name.
 
-+ Клонируйте проект в свою рабочую директорию: 
++ Clone the project to your working directory:
 
 ```git clone https://github.com/KonstantinLi/search_engine```
 
-+ Откройте проект в любой IDE с поддержкой сборщика Maven. 
-Рекомендовано **IntelliJ IDEA Ultimate Edition** для облегченной работы со Spring и инструментами БД.
++ Open the project in any IDE with support for the Maven builder.
+  Recommended by **IntelliJ IDEA Ultimate Edition** for lightweight work with Spring and database tools.
   + Java: 17+
   + PostgreSQL: 15+
-  
-+ Создайте конфигурацию запуска проекта Spring Boot, в которой нужно указать:
-  + Класс **Application**, аннотированный @SpringBootApplication
-  + Имя проекта по желанию
-  + Java 17+
-  + Рекомендуется указать свойство **-Xmx4096M** в VM опциях, что означает выделенную для приложения память объемом 4 ГБ
 
-+ Проект с коробки содержит дефолтный файл конфигурации **application.properties**, который подключает встроенную базу данных HSQLDB, но её применение
-  в production не рекомендовано. Поэтому в папке **src/main/resources/config** создайте файл **application.yaml** и укажите следующую конфигурацию:
++ Create a startup configuration for the Spring Boot project, in which you need to specify:
+  + **Application** class annotated with @SpringBootApplication
+  + Project name optional
+  + Java 17+
+  + It is recommended to specify the **-Xmx4096M** property in the VM options, which means 4 GB of memory allocated for the application
+
++ The project from the box contains the default configuration file **application.properties**, which connects the built-in HSQLDB database, but its application
+  not recommended in production. Therefore, in the **src/main/resources/config** folder, create the **application.yaml** file and specify the following configuration:
 
 ```yaml
 spring:
@@ -148,12 +149,12 @@ indexing-settings:
       name: site-name
 ```
 
-+ Внесите свои данные БД:
-  + ***user*** - имя пользователя
-  + ***pass*** - пароль
-  + ***port*** - зарезервированный порт
-  + ***database*** - имя БД
++ Enter your database data:
+  + ***user*** - username
+  + ***pass*** - password
+  + ***port*** - reserved port
+  + ***database*** - database name
 
-+ В **indexing-settings.sites** внесите свой список значений **url-name** индексируемых сайтов.
++ In **indexing-settings.sites** enter your list of **url-name** values of indexed sites.
 
-+ Указав свойству **spring.jpa.show-sql** значение **true** все SQL-запросы будут видны в консоли.
++ By setting the **spring.jpa.show-sql** property to **true**, all SQL queries will be visible in the console.vvvvv
