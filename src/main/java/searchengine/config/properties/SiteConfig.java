@@ -1,4 +1,4 @@
-package searchengine.config;
+package searchengine.config.properties;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -8,4 +8,5 @@ import lombok.Setter;
 public class SiteConfig {
     private String url;
     private String name;
+    private String language;
 }

@@ -5,6 +5,7 @@ import org.apache.lucene.morphology.LuceneMorphology;
 import org.jsoup.Jsoup;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import searchengine.config.properties.LemmaProperties;
 import searchengine.model.Index;
 import searchengine.model.Lemma;
 import searchengine.model.Page;
@@ -18,10 +19,10 @@ import java.util.*;
 @Component
 @RequiredArgsConstructor
 public class LemmaServiceImpl implements LemmaService {
-    private static final String[] PARTICLES = new String[] {"МЕЖД", "ПРЕДЛ", "СОЮЗ"};
     private final LuceneMorphology luceneMorphology;
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
+    private final LemmaProperties lemmaProperties;
 
     @Value("${spring.jpa.properties.hibernate.jdbc.batch_size}")
     private int batchSize;
@@ -126,7 +127,7 @@ public class LemmaServiceImpl implements LemmaService {
     @Override
     public String[] splitToWords(String text) {
         return text.toLowerCase()
-                .replaceAll("([^а-я\\s])", " ")
+                .replaceAll("([^а-яa-z\\s])", " ")
                 .trim()
                 .split("\\s+");
     }
@@ -150,7 +151,11 @@ public class LemmaServiceImpl implements LemmaService {
     private boolean hasParticleProperty(String wordBase) {
         wordBase = wordBase.toUpperCase();
 
-        for (String property : PARTICLES) {
+        List<String> particles = lemmaProperties.getLanguage().equals("russian") ?
+                lemmaProperties.getRussianParticles() :
+                lemmaProperties.getEnglishParticles();
+
+        for (String property : particles) {
             if (wordBase.contains(property)) {
                 return true;
             }

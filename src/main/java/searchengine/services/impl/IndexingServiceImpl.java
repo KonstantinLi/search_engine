@@ -7,7 +7,8 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import redis.clients.jedis.Jedis;
-import searchengine.config.SiteConfig;
+import searchengine.config.properties.LemmaProperties;
+import searchengine.config.properties.SiteConfig;
 import searchengine.dto.PageData;
 import searchengine.model.Page;
 import searchengine.model.Site;
@@ -40,6 +41,7 @@ public class IndexingServiceImpl implements IndexingService {
     private final ApplicationContext applicationContext;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
+    private final LemmaProperties lemmaProperties;
 
     private final Map<Site, ForkJoinPool> indexingSites =
             Collections.synchronizedMap(new HashMap<>());
@@ -54,7 +56,7 @@ public class IndexingServiceImpl implements IndexingService {
     public void startIndexing() {
         isIndexing.set(true);
 
-        List<SiteConfig> sites = propertiesUtil.getSitesInConfig();
+        List<SiteConfig> sites = propertiesUtil.getSitesInConfig(lemmaProperties.getLanguage());
         sites.forEach(this::putSiteToIndex);
 
         String siteNames = sites.stream().map(SiteConfig::getName).collect(Collectors.joining(", "));
@@ -176,7 +178,7 @@ public class IndexingServiceImpl implements IndexingService {
     private boolean awaitDataDeleting() {
         try {
             deleteExecutor = applicationContext.getBean(ThreadPoolExecutor.class);
-            List<SiteConfig> sites = propertiesUtil.getSitesInConfig();
+            List<SiteConfig> sites = propertiesUtil.getSitesInConfig(lemmaProperties.getLanguage());
 
             if (!dataCleaner.deleteOldData(deleteExecutor, sites)) {
                 LOGGER.warn("Old data hasn't been deleted");
@@ -226,10 +228,11 @@ public class IndexingServiceImpl implements IndexingService {
     }
 
     private void putSiteToIndex(SiteConfig siteConfig) {
+        String language = siteConfig.getLanguage();
         String name = siteConfig.getName();
         String url = siteConfig.getUrl();
 
-        Site site = siteService.saveSite(name, url, null, Status.INDEXING);
+        Site site = siteService.saveSite(name, url, language, null, Status.INDEXING);
         ForkJoinPool pool = applicationContext.getBean(ForkJoinPool.class);
 
         indexingSites.put(site, pool);

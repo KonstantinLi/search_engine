@@ -7,6 +7,6 @@ import java.util.List;
 
 public interface SiteService {
     void updateSiteStatusTime(Site site);
-    Site saveSite(String name, String url, String textError, Status status);
+    Site saveSite(String name, String url, String language, String textError, Status status);
     List<Site> getAllSites();
 }

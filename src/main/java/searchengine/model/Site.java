@@ -32,6 +32,9 @@ public class Site implements Comparable<Site> {
     @Column(columnDefinition = "VARCHAR(255)", nullable = false, unique = true)
     private String name;
 
+    @Column(columnDefinition = "VARCHAR(32)", nullable = false)
+    private String language;
+
     @OneToMany(mappedBy = "site", fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
     private List<Page> pages;
 

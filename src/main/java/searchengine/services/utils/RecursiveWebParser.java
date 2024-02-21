@@ -12,7 +12,6 @@ import org.springframework.context.annotation.Scope;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import redis.clients.jedis.Jedis;
-import searchengine.config.JsoupConnectionConfig;
 import searchengine.exceptions.InvalidURLException;
 import searchengine.exceptions.PageAbsentException;
 import searchengine.exceptions.WebParserInterruptedException;
@@ -37,7 +36,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Setter
 public class RecursiveWebParser extends RecursiveAction implements Cloneable {
-    private final JsoupConnectionConfig jsoupConnectionConfig;
     private final PropertiesUtil propertiesUtil;
     private final IndexRepository indexRepository;
     private final PageRepository pageRepository;
@@ -175,13 +173,7 @@ public class RecursiveWebParser extends RecursiveAction implements Cloneable {
     }
 
     private Connection.Response urlConnect(String url) throws IOException {
-        return Jsoup.connect(url)
-                .userAgent(jsoupConnectionConfig.getUserAgent())
-                .referrer(jsoupConnectionConfig.getReferrer())
-                .timeout(jsoupConnectionConfig.getTimeout())
-                .ignoreHttpErrors(jsoupConnectionConfig.isIgnoreHttpErrors())
-                .followRedirects(jsoupConnectionConfig.isFollowRedirects())
-                .execute();
+        return Jsoup.connect(url).execute();
     }
 
     private void insertPagesIfCountIsMoreThan(Queue<Page> pageQueue, int size) {

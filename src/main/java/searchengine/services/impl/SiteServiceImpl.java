@@ -22,13 +22,14 @@ public class SiteServiceImpl implements SiteService {
     }
 
     @Override
-    public Site saveSite(String name, String url, String textError, Status status) {
+    public Site saveSite(String name, String url, String language, String textError, Status status) {
         Site site = siteRepository.findByName(name);
 
         if (site == null) {
             site = new Site();
             site.setName(name);
             site.setUrl(url);
+            site.setLanguage(language);
         }
 
         site.setStatusTime(LocalDateTime.now());

@@ -5,7 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import redis.clients.jedis.Jedis;
-import searchengine.config.SiteConfig;
+import searchengine.config.properties.SiteConfig;
 import searchengine.model.Lemma;
 import searchengine.model.Page;
 import searchengine.model.Site;
@@ -40,8 +40,6 @@ public class DataCleaner {
 
         Set<Site> sites = new TreeSet<>(siteRepository.findAllByUrlIsIn(urls));
         sites.addAll(siteRepository.findAllByStatus(Status.INDEXING));
-
-//        executor.execute(() -> sites.stream().peek(this::deleteSiteData).forEach(site -> jedis.del(site.getName())));
 
         Future<Boolean> future = executor.submit(() -> sites.stream().allMatch(this::deleteSiteData));
         boolean isDeleted = future.get();

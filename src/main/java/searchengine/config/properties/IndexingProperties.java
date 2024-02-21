@@ -1,4 +1,4 @@
-package searchengine.config;
+package searchengine.config.properties;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -9,7 +9,7 @@ import java.util.List;
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "indexing-settings")
-public class IndexingPropertiesList {
+public class IndexingProperties {
     private List<SiteConfig> sites;
     private List<String> forbiddenUrlTypes;
 }

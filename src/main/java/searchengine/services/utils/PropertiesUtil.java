@@ -2,8 +2,8 @@ package searchengine.services.utils;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import searchengine.config.IndexingPropertiesList;
-import searchengine.config.SiteConfig;
+import searchengine.config.properties.IndexingProperties;
+import searchengine.config.properties.SiteConfig;
 import searchengine.exceptions.SiteConfigAbsentException;
 import searchengine.model.Site;
 import searchengine.model.Status;
@@ -17,7 +17,7 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 public class PropertiesUtil {
-    private final IndexingPropertiesList propertiesList;
+    private final IndexingProperties propertiesList;
     private final SiteRepository siteRepository;
     private final SiteService siteService;
 
@@ -31,6 +31,13 @@ public class PropertiesUtil {
         return Optional.of(propertiesList.getSites()).orElse(new ArrayList<>());
     }
 
+    public List<SiteConfig> getSitesInConfig(String language) {
+        return propertiesList.getSites()
+                .stream()
+                .filter(site -> site.getLanguage().equals(language))
+                .toList();
+    }
+
     public Site getSiteByUrlInConfig(String url) {
         Optional<SiteConfig> siteConfigOptional = propertiesList
                 .getSites()
@@ -41,9 +48,10 @@ public class PropertiesUtil {
         if (siteConfigOptional.isPresent()) {
             SiteConfig siteConfig = siteConfigOptional.get();
             String name = siteConfig.getName();
+            String language = siteConfig.getLanguage();
 
             Site site = siteRepository.findByName(name);
-            return site == null ? siteService.saveSite(name, url, null, Status.INDEXED) : site;
+            return site == null ? siteService.saveSite(name, url, language, null, Status.INDEXED) : site;
         } else {
             throw new SiteConfigAbsentException(url);
         }
