@@ -22,10 +22,7 @@ import searchengine.services.utils.PageIntrospect;
 import searchengine.services.utils.PropertiesUtil;
 import searchengine.services.utils.RecursiveWebParser;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -35,6 +32,7 @@ import java.util.stream.Collectors;
 public class IndexingServiceImpl implements IndexingService {
     private static final Logger LOGGER = LoggerFactory.getLogger(IndexingServiceImpl.class);
 
+    private final Queue<Page> pageQueue;
     private final SiteService siteService;
     private final DataCleaner dataCleaner;
     private final PropertiesUtil propertiesUtil;
@@ -46,7 +44,6 @@ public class IndexingServiceImpl implements IndexingService {
     private final Map<Site, ForkJoinPool> indexingSites =
             Collections.synchronizedMap(new HashMap<>());
     private final AtomicBoolean isIndexing = new AtomicBoolean();
-    private final ConcurrentLinkedQueue<Page> pageQueue = new ConcurrentLinkedQueue<>();
 
     private ExecutorService deleteExecutor;
     private ExecutorService pageExecutor;
@@ -213,7 +210,6 @@ public class IndexingServiceImpl implements IndexingService {
 
         parser.setSite(site);
         parser.setPool(pool);
-        parser.setPageQueue(pageQueue);
         parser.setPage(pageIntrospect);
 
         return parser;

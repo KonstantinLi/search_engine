@@ -82,16 +82,18 @@ public class LemmaServiceImpl implements LemmaService {
         String[] words = splitToWords(text);
 
         for (String word : words) {
-            if (word.isBlank() || isParticle(word))
-                continue;
+            try {
+                if (word.isBlank() || isParticle(word))
+                    continue;
 
-            String firstNormalForm = getFirstNormalForm(word);
+                String firstNormalForm = getFirstNormalForm(word);
 
-            if (firstNormalForm.isBlank())
-                continue;
+                if (firstNormalForm.isBlank())
+                    continue;
 
-            Integer repeat = lemmas.getOrDefault(firstNormalForm, 0);
-            lemmas.put(firstNormalForm, repeat + 1);
+                Integer repeat = lemmas.getOrDefault(firstNormalForm, 0);
+                lemmas.put(firstNormalForm, repeat + 1);
+            } catch (RuntimeException ignore) {}
         }
 
         return lemmas;
@@ -126,8 +128,10 @@ public class LemmaServiceImpl implements LemmaService {
 
     @Override
     public String[] splitToWords(String text) {
+        String rangeOfLetters = lemmaProperties.getLanguage().equals("russian") ? "а-я" : "a-z";
+
         return text.toLowerCase()
-                .replaceAll("([^а-яa-z\\s])", " ")
+                .replaceAll("([^" + rangeOfLetters + "\\s])", " ")
                 .trim()
                 .split("\\s+");
     }

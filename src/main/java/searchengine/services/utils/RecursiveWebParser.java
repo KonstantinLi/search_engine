@@ -26,9 +26,9 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Queue;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveAction;
+import java.util.concurrent.locks.Lock;
 import java.util.stream.Collectors;
 
 @Component
@@ -41,12 +41,13 @@ public class RecursiveWebParser extends RecursiveAction implements Cloneable {
     private final PageRepository pageRepository;
     private final LemmaService lemmaService;
     private final SiteService siteService;
+    private final Queue<Page> pageQueue;
+    private final Lock pageQueueLock;
     private final Jedis jedis;
 
     @Value("${spring.jpa.properties.hibernate.jdbc.batch_size}")
     private int batchSize;
     private PageIntrospect page;
-    private ConcurrentLinkedQueue<Page> pageQueue;
     private ForkJoinPool pool;
     private Site site;
 
@@ -57,12 +58,18 @@ public class RecursiveWebParser extends RecursiveAction implements Cloneable {
             Document doc = parsePage();
             siteService.updateSiteStatusTime(site);
 
-            synchronized (pageQueue) { // ensure other threads wait when a thread captured the monitor provide multi-insert operation
+            // ensure other threads wait when a thread captured the monitor provide multi-insert operation
+            pageQueueLock.lockInterruptibly();
+
+            try {
                 Page page = getPage();
                 if (page.getPath().length() <= 1000) {
                     pageQueue.add(page);
                 }
                 insertPagesIfCountIsMoreThan(pageQueue, batchSize);
+
+            } finally {
+                pageQueueLock.unlock();
             }
 
             Collection<RecursiveWebParser> recursiveWebParsers =
@@ -163,7 +170,6 @@ public class RecursiveWebParser extends RecursiveAction implements Cloneable {
         try {
             RecursiveWebParser childParser = clone();
             childParser.setPage(child);
-            childParser.setPageQueue(pageQueue);
             childParser.setPool(pool);
             childParser.setSite(site);
             return childParser;
