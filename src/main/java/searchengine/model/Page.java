@@ -27,4 +27,7 @@ public class Page {
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String content;
+
+    @Column(nullable = false)
+    private Integer length;
 }

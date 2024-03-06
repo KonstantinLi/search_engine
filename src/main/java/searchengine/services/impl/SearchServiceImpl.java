@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 import redis.clients.jedis.Jedis;
+import searchengine.config.properties.BM25Properties;
+import searchengine.config.properties.LemmaProperties;
 import searchengine.dto.SearchResponse;
 import searchengine.dto.SentenceLemma;
 import searchengine.dto.SnippetItem;
@@ -35,18 +37,20 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SearchServiceImpl implements SearchService {
     private static final int LIMIT_SNIPPET_LENGTH = 300;
-    private static final int MOST_POPULAR_LEMMAS_COUNT = 100;
     private static final Logger LOGGER = LoggerFactory.getLogger(SearchServiceImpl.class);
 
+    private final LemmaProperties lemmaProperties;
     private final IndexRepository indexRepository;
     private final LemmaRepository lemmaRepository;
     private final PageRepository pageRepository;
     private final SiteRepository siteRepository;
+    private final BM25Properties bm25Properties;
     private final LemmaServiceImpl lemmaFinder;
     private final SiteService siteService;
     private final Jedis jedis;
 
     private List<String> mostPopularLemmas;
+    private Double averagePageLength;
 
     @Override
     public SearchResponse search(
@@ -66,7 +70,8 @@ public class SearchServiceImpl implements SearchService {
 
         if (mostPopularLemmas == null) {
             mostPopularLemmas = findMostPopularLemmas(
-                    produceLemmasWithAverageFrequency(lemmaRepository.findAll()));
+                    produceLemmasWithIDF(lemmaRepository.findAll(), siteRepository.findAll()),
+                    sites);
         }
 
         return makeResponse(query, offset, limit, sites);
@@ -74,7 +79,7 @@ public class SearchServiceImpl implements SearchService {
 
     private SearchResponse makeResponse(String query, int offset, int limit, List<Site> sites) {
         Map<String, Double> lemmasInQuery = removeMostPopularLemmas(
-                averageFrequencyOfLemmasInQuery(query));
+                lemmasInQueryWithIDF(query, sites));
 
         Map<Page, Double> relevance = sortPagesByRelevanceDescending(
                 findAllPagesWithLemmas(lemmasInQuery, sites));
@@ -133,7 +138,11 @@ public class SearchServiceImpl implements SearchService {
         String content = Jsoup.parse(page.getContent()).text();
 
         List<SentenceLemma> sentenceLemmaList = SentenceUtil.splitIntoSentences(content).stream()
-                .map(sentence -> SentenceUtil.findLemmasInSentence(lemmaFinder, sentence, lemmaFrequency))
+                .map(sentence -> SentenceUtil.findLemmasInSentence(
+                        lemmaFinder,
+                        sentence,
+                        lemmaProperties.getLanguage(),
+                        lemmaFrequency))
                 .filter(dto -> dto.getLemmaFrequency() != null && !dto.getLemmaFrequency().isEmpty())
                 .toList();
 
@@ -152,53 +161,45 @@ public class SearchServiceImpl implements SearchService {
         return builder.toString();
     }
 
-    private Map<Page, Double> findAllPagesWithLemmas(Map<String, Double> averageFrequency, List<Site> sites) {
-        if (averageFrequency.isEmpty())
+    private Map<Page, Double> findAllPagesWithLemmas(Map<String, Double> lemmasWithIDF, List<Site> sites) {
+        if (lemmasWithIDF.isEmpty())
             return Collections.emptyMap();
 
-        List<String> sortedLemmas = sortLemmasByFrequency(averageFrequency);
+        List<String> sortedLemmas = sortLemmasByInverseFrequencyDescending(lemmasWithIDF);
         String mostRareLemma = sortedLemmas.stream().findFirst().orElse(null);
 
         List<Page> pages = pageRepository.findAllByLemmaAndSiteIn(mostRareLemma, sites);
 
-        return computeRelevance(pages, sortedLemmas);
+        return computeRelevance(pages, lemmasWithIDF);
     }
 
-    private Map<Page, Double> computeRelevance(List<Page> pages, List<String> lemmas) {
-        Map<Page, Double> absoluteRelevance = new HashMap<>();
+    private Map<Page, Double> computeRelevance(List<Page> pages, Map<String, Double> lemmasWithIDF) {
+        if (averagePageLength == null) {
+            averagePageLength = pageRepository.getAverageLength();
+        }
+
+        Map<Page, Double> relevance = new HashMap<>();
 
         pages.forEach(page -> {
-            double pageAbsoluteRank = absoluteRankOfLemmasInPage(page, lemmas);
-            if (pageAbsoluteRank > 0)
-                absoluteRelevance.put(page, pageAbsoluteRank);
+            double score = 0.0;
+
+            for (String lemma : lemmasWithIDF.keySet()) {
+                score += calculateBM25(
+                        calculateTF(page, lemma),
+                        lemmasWithIDF.get(lemma),
+                        page.getLength());
+            }
+
+            relevance.put(page, score);
         });
 
-        if (!absoluteRelevance.isEmpty()) {
-            double maxAbsoluteRelevance = Collections.max(absoluteRelevance.values());
-            absoluteRelevance.replaceAll((key, value) -> value / maxAbsoluteRelevance);
-        }
-
-        return absoluteRelevance;
+        return relevance;
     }
 
-    private double absoluteRankOfLemmasInPage(Page page, List<String> lemmas) {
-        List<Index> indexes = new ArrayList<>();
-        for (String lemma : lemmas) {
-            List<Index> indexesByLemma = indexRepository.findAllByPageAndLemma(page, lemma);
-
-            if (indexesByLemma.isEmpty())
-                return 0.0;
-
-            indexes.addAll(indexesByLemma);
-        }
-
-        return indexes.stream().mapToDouble(Index::getRank).sum();
-    }
-
-    private List<String> sortLemmasByFrequency(Map<String, Double> frequency) {
+    private List<String> sortLemmasByInverseFrequencyDescending(Map<String, Double> frequency) {
         return frequency.entrySet()
                 .stream()
-                .sorted(Map.Entry.comparingByValue())
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                 .map(Map.Entry::getKey)
                 .toList();
     }
@@ -224,24 +225,24 @@ public class SearchServiceImpl implements SearchService {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
-    private List<String> findMostPopularLemmas(Map<String, Double> averageFrequency) {
-        return averageFrequency.entrySet()
+    private List<String> findMostPopularLemmas(Map<String, Double> lemmasWithIDF, List<Site> sites) {
+        return lemmasWithIDF.entrySet()
                 .stream()
-                .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
+                .sorted(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
-                .limit(MOST_POPULAR_LEMMAS_COUNT)
+                .limit(lemmaProperties.getMostPopularLemmas())
                 .toList();
     }
 
-    private Map<String, Double> averageFrequencyOfLemmasInQuery(String query) {
+    private Map<String, Double> lemmasInQueryWithIDF(String query, List<Site> sites) {
         List<Lemma> lemmasInQuery = lemmaRepository.findAllByLemmaIn(
                 lemmaFinder.collectLemmas(query).keySet());
 
-        return produceLemmasWithAverageFrequency(lemmasInQuery);
+        return produceLemmasWithIDF(lemmasInQuery, sites);
     }
 
-    private Map<String, Double> produceLemmasWithAverageFrequency(List<Lemma> lemmas) {
-        long totalSitesCount = siteRepository.count();
+    private Map<String, Double> produceLemmasWithIDF(List<Lemma> lemmas, List<Site> sites) {
+        long totalPages = sites.stream().mapToLong(pageRepository::countBySite).sum();
 
         Map<String, Double> totalFrequency = new HashMap<>();
         for (Lemma lemmaObject : lemmas) {
@@ -249,9 +250,32 @@ public class SearchServiceImpl implements SearchService {
             Double oldFrequency = totalFrequency.getOrDefault(lemma, 0.0);
             totalFrequency.put(lemma, oldFrequency + lemmaObject.getFrequency());
         }
-        totalFrequency.replaceAll((lemma, frequency) -> frequency / totalSitesCount);
 
-        return totalFrequency;
+        return calculateIDF(totalFrequency, totalPages);
+    }
+
+    private Map<String, Double> calculateIDF(Map<String, Double> lemmas, long totalPages) {
+        Map<String, Double> scoresIDF = new HashMap<>();
+
+        for (Map.Entry<String, Double> entry : lemmas.entrySet()) {
+            double frequency = entry.getValue();
+            double idf = Math.log((totalPages - frequency + 0.5) / (frequency + 0.5));
+            scoresIDF.put(entry.getKey(), idf);
+        }
+
+        return scoresIDF;
+    }
+
+    private double calculateTF(Page page, String lemma) {
+        Optional<Index> index = indexRepository.findByPageAndLemma(page, lemma);
+        return index.map(value -> value.getRank() / page.getLength()).orElse(0.0F);
+    }
+
+    private double calculateBM25(double tf, double idf, int pageLength) {
+        double k1 = bm25Properties.getK1();
+        double b = bm25Properties.getB();
+
+        return idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (pageLength / averagePageLength))));
     }
 
     private void saveResponse(String query, String site, SearchResponse searchResponse) {

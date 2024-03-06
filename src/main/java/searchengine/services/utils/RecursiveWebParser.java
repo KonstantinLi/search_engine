@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Scope;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import redis.clients.jedis.Jedis;
+import searchengine.config.properties.LemmaProperties;
 import searchengine.exceptions.InvalidURLException;
 import searchengine.exceptions.PageAbsentException;
 import searchengine.exceptions.WebParserInterruptedException;
@@ -36,6 +37,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Setter
 public class RecursiveWebParser extends RecursiveAction implements Cloneable {
+    private final LemmaProperties lemmaProperties;
     private final PropertiesUtil propertiesUtil;
     private final IndexRepository indexRepository;
     private final PageRepository pageRepository;
@@ -135,9 +137,16 @@ public class RecursiveWebParser extends RecursiveAction implements Cloneable {
         page.setPath(this.page.getPath());
         page.setContent(this.page.getContent());
         page.setCode(this.page.getCode());
+        page.setLength(pageLength());
         page.setSite(site);
 
         return page;
+    }
+
+    private int pageLength() {
+        return SentenceUtil.wordsInText(
+                Jsoup.parse(this.page.getContent()).text(),
+                lemmaProperties.getLanguage());
     }
 
     private Collection<String> validLinks(Document doc) {

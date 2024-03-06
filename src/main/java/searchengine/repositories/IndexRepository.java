@@ -10,6 +10,7 @@ import searchengine.model.Lemma;
 import searchengine.model.Page;
 
 import java.util.List;
+import java.util.Optional;
 
 
 @Repository
@@ -17,7 +18,7 @@ public interface IndexRepository extends JpaRepository<Index, Integer> {
     @Query("FROM Index i " +
             "JOIN Lemma l ON i.lemma = l " +
             "WHERE i.page = ?1 AND l.lemma = ?2")
-    List<Index> findAllByPageAndLemma(Page page, String lemma);
+    Optional<Index> findByPageAndLemma(Page page, String lemma);
 
     @Transactional
     @Modifying

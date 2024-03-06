@@ -10,6 +10,7 @@ import java.util.List;
 @Setter
 @ConfigurationProperties(prefix = "search")
 public class LemmaProperties {
+    private int mostPopularLemmas;
     private String language = "english";
     private List<String> englishParticles;
     private List<String> russianParticles;

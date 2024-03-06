@@ -13,6 +13,7 @@ import searchengine.model.Site;
 import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.services.interfaces.LemmaService;
+import searchengine.services.utils.SentenceUtil;
 
 import java.util.*;
 
@@ -79,7 +80,7 @@ public class LemmaServiceImpl implements LemmaService {
     @Override
     public Map<String, Integer> collectLemmas(String text) {
         Map<String, Integer> lemmas = new HashMap<>();
-        String[] words = splitToWords(text);
+        String[] words = SentenceUtil.splitToWords(text, lemmaProperties.getLanguage());
 
         for (String word : words) {
             try {
@@ -125,17 +126,6 @@ public class LemmaServiceImpl implements LemmaService {
 
         return normalForms.get(0);
     }
-
-    @Override
-    public String[] splitToWords(String text) {
-        String rangeOfLetters = lemmaProperties.getLanguage().equals("russian") ? "а-я" : "a-z";
-
-        return text.toLowerCase()
-                .replaceAll("([^" + rangeOfLetters + "\\s])", " ")
-                .trim()
-                .split("\\s+");
-    }
-
     private Lemma findExistingLemma(Collection<Lemma> lemmas, String lemmaValue, String url) {
         return lemmas.stream()
                 .filter(lemma1 -> {

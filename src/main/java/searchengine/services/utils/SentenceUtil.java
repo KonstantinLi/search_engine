@@ -10,6 +10,8 @@ import java.util.*;
 public class SentenceUtil {
     private static final int LIMIT_SENTENCE_LENGTH = 120;
 
+    private SentenceUtil() {}
+
     public static String limitSentence(String sentence) {
         int length = sentence.length();
 
@@ -43,10 +45,11 @@ public class SentenceUtil {
     public static SentenceLemma findLemmasInSentence(
             LemmaService lemmaService,
             String sentence,
+            String language,
             Map<String, Double> lemmaFrequency) {
 
         Map<String, Double> lemmasInSentence = new HashMap<>();
-        String[] words = Arrays.stream(lemmaService.splitToWords(sentence)).distinct().toArray(String[]::new);
+        String[] words = Arrays.stream(splitToWords(sentence, language)).distinct().toArray(String[]::new);
 
         for (String word : words) {
             String lemma = lemmaService.getFirstNormalForm(word);
@@ -61,6 +64,19 @@ public class SentenceUtil {
         sentenceLemma.setLemmaFrequency(lemmasInSentence);
 
         return sentenceLemma;
+    }
+
+    public static int wordsInText(String text, String language) {
+        return splitToWords(text, language).length;
+    }
+
+    public static String[] splitToWords(String text, String language) {
+        String rangeOfLetters = language.equals("russian") ? "а-я" : "a-z";
+
+        return text.toLowerCase()
+                .replaceAll("([^" + rangeOfLetters + "\\s])", " ")
+                .trim()
+                .split("\\s+");
     }
 
     public static List<String> splitIntoSentences(String text) {
